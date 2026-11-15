@@ -6,8 +6,14 @@
 #include"sstream"
 #include"sensor_msgs/CameraInfo.h"
 #include"iostream"
+#include"vector"
 
 #include"mutex"//用于线程安全
+
+
+#include<opencv2/imgproc.hpp>
+
+
 
 class ImageConverter{
     private:
@@ -22,6 +28,8 @@ class ImageConverter{
     double fx ,fy , cx , cy ,img_height ,img_width;
     cv::Mat K;
     cv::Mat D;
+    std::string image_topic,info_topic,pub_topic;
+
     bool camera_info = false;
 
     //缓存最新的camera_info
@@ -34,7 +42,6 @@ class ImageConverter{
     public:
     ImageConverter():it_(nh_){
         //读取参数
-        std::string image_topic,info_topic,pub_topic;
         nh_.param<std::string>("image_topic",image_topic,"/hk_camera/image_raw");
         nh_.param<std::string>("info_topic",info_topic,"/hk_camera/camera_info");
         nh_.param<std::string>("pub_topic",pub_topic,"/ft/debug/image");
@@ -44,6 +51,8 @@ class ImageConverter{
 
         image_pub = it_.advertise(pub_topic,1);
     }
+
+    
 };
 
     void ImageConverter::ImageCallback(const sensor_msgs::ImageConstPtr& msg){
@@ -64,6 +73,7 @@ class ImageConverter{
         }
 
         cv::Mat img;
+        cv::Mat img01;
         {
             std::lock_guard<std::mutex>lock(info_mutex_);
             if (camera_info)
@@ -80,6 +90,26 @@ class ImageConverter{
         out_cv_img.image = img;
 
         image_pub.publish(out_cv_img.toImageMsg());
+        //
+
+        cv::Mat frame =cv_ptr->image;
+        cv::Mat ProcessImage(const cv::Mat&frame);
+        cv::VideoCapture cap("image_topic");
+        cv::Mat hsv,mask,res;
+        cv::cvtColor(frame,hsv,cv::COLOR_BGR2HSV);
+
+        cv::Scalar lower_blue(110,50,50);
+        cv::Scalar upper_blue(130,255,255);
+
+        cv::inRange(hsv,lower_blue,upper_blue,mask);
+        cv::bitwise_and(frame,frame,res,mask);
+
+        //把Mat信息转化为ros
+        cv_bridge::CvImage out_color_img;
+        out_color_img.header = msg->header;
+        out_color_img.encoding ="bgr8";
+        out_color_img.image = res;
+        image_pub.publish(out_color_img.toImageMsg());
 
         }
         
@@ -105,6 +135,8 @@ class ImageConverter{
 
         ros::init(argc,argv,"image");
         ImageConverter ic;
+        ImageConverter converter;
+
         ros::spin();
         return 0;
     }
