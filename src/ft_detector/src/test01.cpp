@@ -15,6 +15,8 @@
 
 #include<opencv2/imgproc.hpp>
 
+#include<cstring>
+
 
 
 class ImageConverter{
@@ -129,14 +131,14 @@ class ImageConverter{
         cv::Scalar upper_orange1(30,255,255);
 
 
-        cv::Scalar lower_blue(100,80,0);
+        cv::Scalar lower_blue(90,40,0);
         cv::Scalar upper_blue(125,255,255);
 
         cv::inRange(hsv,lower_blue,upper_blue,mask);
         cv::inRange(hsv,lower_red1,upper_red1,mask1);
         cv::inRange(hsv,lower_red2,upper_red2,mask2);
-
         cv::inRange(hsv,lower_orange1,upper_orange1,mask_orange);
+
 
         cv::bitwise_or(mask1,mask2,red_mask);
         cv::bitwise_or(red_mask,mask,mask_0);
@@ -149,16 +151,27 @@ class ImageConverter{
         out_mark_img.image = res;
         mark_pub.publish(out_mark_img.toImageMsg());
 
-        
-        //转二值
-        
+        cv::Mat dst;
+
+        //// 1. 先用小核中值滤波消除掩码里的椒盐噪点
+        cv::medianBlur(mask_final,mask_final,3);
+
+                //形态学转换，先腐蚀再膨胀
+        cv::Mat kernel_mask = cv::getStructuringElement(cv::MONOCHROME_TRANSFER,cv::Size(5,5));
+        cv::erode (mask_final,mask_final,kernel_mask);
+        cv::dilate (mask_final,mask_final,kernel_mask);
+
+        cv::Mat kernel_dilate = cv::getStructuringElement(cv::MORPH_RECT,cv::Size(15,15));
+        cv::dilate(mask_final,dst,kernel_dilate);
+
+
         std::vector<std::vector<cv::Point>> contours;   //轮廓
         std::vector<cv::Vec4i> hierarchy;   //层级关系
         cv::findContours(mask_final,contours,hierarchy,cv::RETR_EXTERNAL,cv::CHAIN_APPROX_SIMPLE);
 
 
-         cv::Mat result_img = mask_final.clone();//画布要放到for外面
-        
+        cv::Mat result_img = img.clone();
+
         for (size_t i = 0;i < contours.size();i++){
 
             //过滤面积过于小的噪点
@@ -172,11 +185,11 @@ class ImageConverter{
             float height = rect.size.height;
 
             float area = rect.size.width * rect.size.height;
-            if(area < 1000.0f){
+            if(area < 50.0  && area > 200){
                 continue;
             }
 
-            if(width <0.1f &&height < 0.1f)
+            if(width <0.1f ||height < 0.1f)
             continue;
 
             //ai建议：height不一定一直大于width
@@ -186,24 +199,22 @@ class ImageConverter{
 
                 double rate = height / width;
 
-                if(rate<1.0 || rate>4.0)
+                if(rate<1.5 || rate>2.5)
                 continue;
                 
-                if(std::abs(angle) >25.0f)
+                if(std::abs(angle) >30.0f)
                 continue;
 
-
-
                 cv::Rect rect_box = rect.boundingRect();
-
+                // 把矩形边界限制在图像范围内，防止越界访问崩溃
                 rect_box.x = std::max(0,rect_box.x);
                 rect_box.y = std::max(0,rect_box.y);
-                rect_box.width = std::min(img.cols - rect_box.x,rect_box.width);
-                rect_box.height = std::min(img.rows - rect_box.y,rect_box.height);
+                rect_box.width = std::min(result_img.cols - rect_box.x,rect_box.width);
+                rect_box.height = std::min(result_img.rows - rect_box.y,rect_box.height);
 
                 cv::Scalar draw_color = cv::Scalar(0,255,0);
                 if(rect_box.width > 0 && rect_box.height > 0){
-                    cv::Mat mask_roi = mask_final(rect_box);
+                    cv::Mat mask_roi = dst(rect_box);
                     int white_pixels = cv::countNonZero(mask_roi);
 
                 }
@@ -214,26 +225,30 @@ class ImageConverter{
                 //获取矩阵的四个顶点
 
                 std::vector<std::vector<cv::Point>> boxContours(1);
-
                 cv::Point2f vertices[4];
                 rect.points(vertices);
 
                     for (int n = 0;n<4;n++){
                         boxContours[0].push_back(cv::Point(cvRound(vertices[n].x),cvRound(vertices[n].y)));
                     }
+                    std::vector<std::vector<cv::Point>> boxContours1(1,boxContours[0]);
                     
-                    cv::drawContours(mask_final,boxContours,-1,draw_color,2);
+                    cv::drawContours(result_img,boxContours,-1,draw_color,2);
                     //绘制轮廓，线绿色，宽2
 
                 }
+                    //修正step
+                    sensor_msgs::ImagePtr contours_msg = boost::make_shared<sensor_msgs::Image>();
+                    contours_msg->header = msg->header;
+                    contours_msg->height = result_img.rows;
+                    contours_msg->width = result_img.cols;
+                    contours_msg->encoding = "bgr8";
+                    contours_msg->is_bigendian = 0;
+                    contours_msg->step = contours_msg->width * 3;
+                    contours_msg->data.resize(contours_msg->step * contours_msg->height);
 
-                    cv_bridge::CvImage out_contours_img;
-                    out_contours_img.header = msg->header;
-                    out_contours_img.image = result_img;
-                    out_contours_img.encoding = sensor_msgs::image_encodings::BGR8;
-                    contours_pub.publish(out_contours_img.toImageMsg());
-
-
+                    memcpy(&contours_msg->data[0],result_img.data,contours_msg->data.size());
+                    contours_pub.publish(contours_msg);
             
         
         }
@@ -251,6 +266,7 @@ class ImageConverter{
         camera_info = true;
 
     }
+
 
 
 
