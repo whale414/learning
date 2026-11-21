@@ -125,13 +125,13 @@ class ImageConverter{
 
         cv::cvtColor(frame,hsv,cv::COLOR_BGR2HSV);
 
-        cv::Scalar lower_red1(0,220,100);
+        cv::Scalar lower_red1(0,180,100);
         cv::Scalar upper_red1(10,255,255);
 
-        cv::Scalar lower_red2(160,220,100);
+        cv::Scalar lower_red2(160,180,100);
         cv::Scalar upper_red2(180,255,255);
 
-        cv::Scalar lower_orange1(10,110,100);
+        cv::Scalar lower_orange1(10,100,100);
         cv::Scalar upper_orange1(35,255,255);
 
 
@@ -176,8 +176,8 @@ class ImageConverter{
         cv::Mat kernel_open = cv::getStructuringElement(cv::MORPH_RECT, cv::Size(3, 3));
         cv::morphologyEx(temp_mask, cleaned_mask, cv::MORPH_OPEN, kernel_open);
         // 3. 闭运算：连接断裂灯条
-        // 注意：你用了 5x5 的核，对于远距离小灯条可能会粘连，可以先用 3x3
-        cv::Mat kernel_close = cv::getStructuringElement(cv::MORPH_RECT, cv::Size(3, 3)); 
+       
+        cv::Mat kernel_close = cv::getStructuringElement(cv::MORPH_RECT, cv::Size(10, 10)); 
         cv::morphologyEx(cleaned_mask, cleaned_mask, cv::MORPH_CLOSE, kernel_close);
 
    //修复 之前的dst完全是空的，这里给它赋值：把清理后的掩码膨胀连通
@@ -192,6 +192,42 @@ class ImageConverter{
         cv::findContours(mask_final, contours, hierarchy, cv::RETR_EXTERNAL, cv::CHAIN_APPROX_SIMPLE);
 
         cv::Mat result_img = img.clone();
+
+        //一开始用split拆分，会发现很容易受环境的影响，后面改成提取mask但是单通道无法直接转换
+cv::Mat result_img_1 = img.clone();
+cv::Mat copy = mask_final.clone();
+// 1. 确保 mask 是单通道
+if (copy.channels() != 1) {
+    cv::cvtColor(copy, copy, cv::COLOR_BGR2GRAY);
+}
+// 2. 使用 mask 提取原始图像中的感兴趣区域 (ROI) 像素
+// 方法：计算原始图像在 mask 非零区域的均值
+cv::Scalar mean_bgr = cv::mean(result_img_1,copy); 
+
+double B = mean_bgr[0];
+double G = mean_bgr[1];
+double R = mean_bgr[2];
+
+// 3. 增加鲁棒性判断：不仅比较 R 和 B，还要看饱和度或差值
+// 红色特征：R 远大于 B 和 G
+// 蓝色特征：B 远大于 R 和 G
+
+double diff_rb = R - B;
+
+if (diff_rb > 30) { 
+    // 红色分量显著高于蓝色
+    ROS_INFO("Light is RED\n");
+} 
+else if (diff_rb < -30) { 
+    // 蓝色分量显著高于红色
+    ROS_INFO("Light is BLUE\n");
+} 
+else {
+    // 差值太小，可能是白色、灰色或噪声
+    ROS_INFO("Color Unclear\n");
+}
+
+
 
         std::vector<cv::RotatedRect> Light_bars;
 
@@ -274,6 +310,7 @@ class ImageConverter{
 
 
             
+            
             //绿色筛选框
                 // cv::Scalar draw_color = cv::Scalar(0,255,0);
 
@@ -313,13 +350,17 @@ class ImageConverter{
                         float height_light_2 = std::max(rect2.size.width,rect2.size.height);
                         float min_height = std::min (height_light_1,height_light_2);
 
+                        float change = abs(height_light_1-height_light_2);
+                        if(change >5)
+                        continue;
+
                         //两个灯条之间的距离
                         float distance = norm(center1 - center2);
 
                         //装甲板的长和灯条宽度比值
                         double rate_light_1 = distance / min_height;
 
-                        if(rate_light_1 < 1.5 || rate_light_1 >5)
+                        if(rate_light_1 < 1.5 || rate_light_1 >6)
                         continue;
 
                         //灯条角度
@@ -334,12 +375,18 @@ class ImageConverter{
 
                         float dis_angle = abs(angle_light_1 - angle_light_2);
                         
-                        if(dis_angle > 5)
+                        if(dis_angle > 6)
                         continue;
+
+                        
 
                         //灯条的水平距离和数值长度
                         float horizontal_distance = abs(center1.x - center2.x);
                         float vertical_distanch = abs(center1.y - center2.y);
+
+                        //补充：查y轴偏离
+                        if(vertical_distanch >15.0f)
+                        continue;
 
                         if(horizontal_distance < vertical_distanch)
                         continue;
@@ -354,16 +401,58 @@ class ImageConverter{
                         float center_height = (height_light_1 + height_light_2)/2;
                         float center_width = distance;
                         float center_angle = (angle_light_1 + angle_light_2)/2;
+
+                    
                         // 3. 构造装甲板的旋转矩形
+
                         cv::RotatedRect ban_rect (center_point,cv::Size(center_width,center_height),center_angle);
 
                         cv::Point2f ban_vertices[4];
                         ban_rect.points(ban_vertices);
 
-                        for(int i =0 ;i<4;i++){
-                            cv::line(result_img,cv::Point(ban_vertices[i]),cv::Point(ban_vertices[(i+1)%4]),cv::Scalar(120,0,255),3);
+
+                        // float h_half = min_height/2;
+                        // float w_half = distance / 2;
+
+                        // float cos_a = std::cos((angle_light_1+angle_light_2)/2);
+                        // float sin_a = std::sin((angle_light_1+angle_light_2)/2);
+
+                        // cv::Point2f corner[4];
+                        // corner[0] = {center_final.x-w_half*cos_a,center_final.y+h_half*sin_a};
+                        // corner[1] = {center_final.x+w_half*cos_a,center_final.y+h_half*sin_a};
+                        // corner[2] = {center_final.x+w_half*cos_a,center_final.y-h_half*sin_a};
+                        // corner[3] = {center_final.x-w_half*cos_a,center_final.y-h_half*sin_a};
+
+                        // std::vector<cv::Point2f> dst_points{
+                        //     cv::Point2f(0,0),
+                        //     cv::Point2f(240,0),
+                        //     cv::Point2f(240,120),
+                        //     cv::Point2f(0,120)
+                        // };
+                        // std::vector<cv::Point2f> src_point{corner[0],corner[1],corner[2],corner[3]};
+                        
+                        // cv::Mat H4 = cv::getPerspectiveTransform(src_point,dst_points);
+                        // cv::Mat warped_ban;
+
+                        // cv::warpPerspective(result_img,warped_ban,H4,cv::Size(240,120));
+
+
+                        if(rate_light_1 <= 3.35){
+
+
+                            for(int i =0 ;i<4;i++){
+                            cv::line(result_img,cv::Point2f(ban_vertices[i]),cv::Point2f(ban_vertices[(i+1)%4]),cv::Scalar(0,255,0),3);
                         }
-    
+                        ROS_INFO("Small armor plate detected");
+                    }
+                        else {
+                        for(int i =0 ;i<4;i++){
+                
+                            cv::line(result_img,cv::Point2f(ban_vertices[i]),cv::Point2f(ban_vertices[(i+1)%4]),cv::Scalar(0,0,255),3);
+                        }
+                        ROS_INFO("Large armor plate detected");
+                    }
+            
                 }
 
                 cv_bridge::CvImage out_contour_img;
