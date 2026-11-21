@@ -46,6 +46,8 @@ class ImageConverter{
 
     void ImageCallback(const sensor_msgs::ImageConstPtr& msg);
     void CameraCallback(const sensor_msgs::CameraInfo& msg);
+    double max(double x,double y);
+    double min(double x,double y);
 
     public:
     ImageConverter():it_(nh_){
@@ -70,6 +72,8 @@ class ImageConverter{
 
     void ImageConverter::ImageCallback(const sensor_msgs::ImageConstPtr& msg){
         //检验
+
+
         ROS_INFO("Received image,encoding:%s",msg->encoding.c_str());
 
         ros::Time stamp = msg->header.stamp;
@@ -189,6 +193,8 @@ class ImageConverter{
 
         cv::Mat result_img = img.clone();
 
+        std::vector<cv::RotatedRect> Light_bars;
+
         for (size_t i = 0;i < contours.size();i++){
 
             double area = cv::contourArea(contours[i]);
@@ -266,24 +272,100 @@ class ImageConverter{
 
                 ROS_INFO("Contour: area=%.2f, w=%.2f, h=%.2f, rate=%.2f, angle=%.2f",area, width, height, height/width, angle);
 
-                cv::Scalar draw_color = cv::Scalar(0,255,0);
 
-                //获取矩阵的四个顶点
+            
+            //绿色筛选框
+                // cv::Scalar draw_color = cv::Scalar(0,255,0);
 
-                std::vector<std::vector<cv::Point>> boxContours(1);
-                cv::Point2f vertices[4];
-                rect.points(vertices);
+                // //获取矩阵的四个顶点
 
-                    for (int n = 0;n<4;n++){
-                        boxContours[0].push_back(cv::Point(cvRound(vertices[n].x),cvRound(vertices[n].y)));
-                    }
-                    std::vector<std::vector<cv::Point>> boxContours1(1,boxContours[0]);
+                // std::vector<std::vector<cv::Point>> boxContours(1);
+                // cv::Point2f vertices[4];
+                // rect.points(vertices);
+
+                // //     for (int n = 0;n<4;n++){
+                // //         boxContours[0].push_back(cv::Point(cvRound(vertices[n].x),cvRound(vertices[n].y)));
+                // //     }
+                // //     std::vector<std::vector<cv::Point>> boxContours1(1,boxContours[0]);
                     
-                    cv::drawContours(result_img,boxContours,-1,draw_color,2);
-                    //绘制轮廓，线绿色，宽2
+                // //     cv::drawContours(result_img,boxContours,-1,draw_color,2);
+                // //     //绘制轮廓，线绿色，宽2
 
-                }
+                // // }
                   
+
+                Light_bars.push_back(rect);
+
+                std::vector<cv::Point2f> pairLightbars(const std::vector<cv::RotatedRect>& light_bars) ;
+                std::vector<cv::Point2f> centers_final_last;
+
+                for(size_t i = 0;i < Light_bars.size();i++){
+                    for(size_t j = i+1;j < Light_bars.size();j++){
+                        //；两个灯条中心
+                        cv::Point2f center1 = Light_bars[i].center;
+                        cv::Point2f center2 = Light_bars[j].center;
+                        //两个等条的旋转矩形信息
+                        cv::RotatedRect rect1 = Light_bars[i];
+                        cv::RotatedRect rect2 = Light_bars[j];
+
+                        //两个灯条筛选出长宽之后，找最短的长度
+                        float height_light_1 = std::max(rect1.size.width,rect1.size.height);
+                        float height_light_2 = std::max(rect2.size.width,rect2.size.height);
+                        float min_height = std::min (height_light_1,height_light_2);
+
+                        //两个灯条之间的距离
+                        float distance = norm(center1 - center2);
+
+                        //装甲板的长和灯条宽度比值
+                        double rate_light_1 = distance / min_height;
+
+                        if(rate_light_1 < 1.5 || rate_light_1 >5)
+                        continue;
+
+                        //灯条角度
+                        float angle_light_1 = rect1.angle;
+                        float angle_light_2 = rect2.angle;
+
+                        if(angle_light_1 < -45)
+                        angle_light_1 += 90;
+                        
+                        if(angle_light_2 < -45)
+                        angle_light_2 += 90;
+
+                        float dis_angle = abs(angle_light_1 - angle_light_2);
+                        
+                        if(dis_angle > 5)
+                        continue;
+
+                        //灯条的水平距离和数值长度
+                        float horizontal_distance = abs(center1.x - center2.x);
+                        float vertical_distanch = abs(center1.y - center2.y);
+
+                        if(horizontal_distance < vertical_distanch)
+                        continue;
+
+                        //计算装甲板中心
+                        cv::Point2f center_final((center1.x+center2.x)/2,(center1.y+center2.y)/2);
+
+                        cv::Point2f center_point = (center1 + center2)/2.0;
+
+                        centers_final_last.push_back(center_final); //把后者信息赋给前者
+
+                        float center_height = (height_light_1 + height_light_2)/2;
+                        float center_width = distance;
+                        float center_angle = (angle_light_1 + angle_light_2)/2;
+                        // 3. 构造装甲板的旋转矩形
+                        cv::RotatedRect ban_rect (center_point,cv::Size(center_width,center_height),center_angle);
+
+                        cv::Point2f ban_vertices[4];
+                        ban_rect.points(ban_vertices);
+
+                        for(int i =0 ;i<4;i++){
+                            cv::line(result_img,cv::Point(ban_vertices[i]),cv::Point(ban_vertices[(i+1)%4]),cv::Scalar(120,0,255),3);
+                        }
+    
+                }
+
                 cv_bridge::CvImage out_contour_img;
                 out_contour_img.header = msg -> header;
                 out_contour_img.encoding = sensor_msgs::image_encodings::BGR8;
@@ -293,6 +375,8 @@ class ImageConverter{
         
         }
     
+    }
+}
 
     void ImageConverter::CameraCallback(const sensor_msgs::CameraInfo& msg)
     {
