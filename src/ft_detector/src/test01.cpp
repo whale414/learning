@@ -31,8 +31,6 @@ class ImageConverter{
     image_transport::Publisher mark_pub;
     image_transport::Publisher contours_pub;
 
-
-
     double fx ,fy , cx , cy ,img_height ,img_width;
     cv::Mat K;
     cv::Mat D;
@@ -48,6 +46,22 @@ class ImageConverter{
     void CameraCallback(const sensor_msgs::CameraInfo& msg);
     double max(double x,double y);
     double min(double x,double y);
+
+    //函数声明
+    cv::Mat undistorImage (const cv::Mat& src_img);
+    cv::Mat generateColorMask(const cv::Mat& hsv_img);
+    cv::Mat preprocessMask(cv::Mat& mask_final);
+    std::string judgeArmorColor(const cv::Mat& src_img, const cv::Mat& mask) ;
+    std::vector<cv::RotatedRect> filterLightBars(const std::vector<std::vector<cv::Point>>& contours , const cv::Mat& dst) ;
+    void pairAndDrawArmor(const std::vector<cv::RotatedRect>& light_bars, cv::Mat& result_img);
+    
+
+
+
+
+
+
+    
 
     public:
     ImageConverter():it_(nh_){
@@ -69,61 +83,56 @@ class ImageConverter{
 
 };   
 
+    // CameraInfo ⾥读内参 K、畸变 D 和图像尺⼨
+     void ImageConverter::CameraCallback(const sensor_msgs::CameraInfo& msg)
+    {
 
-    void ImageConverter::ImageCallback(const sensor_msgs::ImageConstPtr& msg){
-        //检验
-
-
-        ROS_INFO("Received image,encoding:%s",msg->encoding.c_str());
-
-        ros::Time stamp = msg->header.stamp;
-        std::string frame_id = msg->header.frame_id;
-        
-        cv_bridge::CvImageConstPtr cv_ptr;
-
-        try{
-            cv_ptr = cv_bridge::toCvShare(msg, sensor_msgs::image_encodings::BGR8);
-         }
-    
-        catch(cv_bridge::Exception& e)
-        {
-            ROS_ERROR("cv_bridge exception:%s",e.what());
-            return;
-        }
-
-        cv::Mat img;
-    
-        bool test = false;
-
-        {
-        //把锁缩小到仅读取标定参数的瞬间
         std::lock_guard<std::mutex>lock(info_mutex_);
-        test = camera_info;
-        }
 
-            if (test)
+        K = cv::Mat(3,3,CV_64F,(void*)msg.K.data()).clone();
+        //(矩阵，指向K内存地址)
+
+        D = cv::Mat(msg.D.size(),1,CV_64F , (void*)msg.D.data()).clone();
+        //向量
+
+        camera_info = true;
+
+    }
+
+   //去畸变
+    cv::Mat ImageConverter::undistorImage(const cv::Mat& src_img){
+        bool test = false;
+        {
+            std::lock_guard<std::mutex> lock(info_mutex_);
+            test = camera_info;
+        }
+        cv::Mat dst_img;
+
+           if (test)
             {
-                cv::undistort(cv_ptr->image,img,K,D);
+                cv::undistort(src_img,dst_img,K,D);
             }
             else{
-                img = cv_ptr->image.clone();
+                dst_img = src_img.clone();
             }
+        return dst_img;
 
-        //需要将 cv::Mat 转回 ROS 消息
-        cv_bridge::CvImage out_cv_img;
-        out_cv_img.header = msg->header; // 保留原始 header 的时间戳和 frame_id
-        out_cv_img.encoding = sensor_msgs::image_encodings::BGR8;
-        out_cv_img.image = img;
-        image_pub.publish(out_cv_img.toImageMsg());
+    }
 
-        cv::Mat frame = img;
-        cv::Mat hsv,mask,res;
+
+
+
+    //灯条检验
+    cv::Mat ImageConverter::generateColorMask(const cv::Mat& hsv_img){
+
+        //定义参数
+
+        cv::Mat mask;
         cv::Mat mask1,mask2,red_mask,res1;
         cv::Mat mask_final;
         cv::Mat mask_orange;
         cv::Mat mask_0;
 
-        cv::cvtColor(frame,hsv,cv::COLOR_BGR2HSV);
 
         cv::Scalar lower_red1(0,180,100);
         cv::Scalar upper_red1(10,255,255);
@@ -138,27 +147,22 @@ class ImageConverter{
         cv::Scalar lower_blue(90,40,30);
         cv::Scalar upper_blue(130,255,255);
 
-        cv::inRange(hsv,lower_blue,upper_blue,mask);
-        cv::inRange(hsv,lower_red1,upper_red1,mask1);
-        cv::inRange(hsv,lower_red2,upper_red2,mask2);
-        cv::inRange(hsv,lower_orange1,upper_orange1,mask_orange);
+        cv::inRange(hsv_img,lower_blue,upper_blue,mask);
+        cv::inRange(hsv_img,lower_red1,upper_red1,mask1);
+        cv::inRange(hsv_img,lower_red2,upper_red2,mask2);
+        cv::inRange(hsv_img,lower_orange1,upper_orange1,mask_orange);
 
 
         cv::bitwise_or(mask1,mask2,red_mask);
         cv::bitwise_or(red_mask,mask,mask_0);
         cv::bitwise_or(mask_0,mask_orange,mask_final);
-        cv::bitwise_and(frame,frame,res,mask_final);
 
-        cv_bridge::CvImage out_mark_img;
-        out_mark_img.header = msg->header;
-        out_mark_img.encoding =sensor_msgs::image_encodings::BGR8;
-        out_mark_img.image = res;
-        mark_pub.publish(out_mark_img.toImageMsg());
+        return mask_final;
+    }
 
-        cv::Mat dst;
+    //形态学修复
+    cv::Mat ImageConverter::preprocessMask(cv::Mat& mask_final){
 
-        ///// 1. 先用小核中值滤波消除掩码里的椒盐噪点
-        // 注意：为了防止原地操作引起问题，这里用临时变量过渡
         cv::Mat temp_mask;
         if (mask_final.channels() == 3) {
                 cv::cvtColor(mask_final, mask_final, cv::COLOR_BGR2GRAY); 
@@ -179,59 +183,60 @@ class ImageConverter{
        
         cv::Mat kernel_close = cv::getStructuringElement(cv::MORPH_RECT, cv::Size(10, 10)); 
         cv::morphologyEx(cleaned_mask, cleaned_mask, cv::MORPH_CLOSE, kernel_close);
-
+    
+    cv::Mat dst;
    //修复 之前的dst完全是空的，这里给它赋值：把清理后的掩码膨胀连通
     cv::Mat kernel_dilate = cv::getStructuringElement(cv::MORPH_RECT, cv::Size(15, 15));
     cv::dilate(cleaned_mask, dst, kernel_dilate);
 
-        // 4. 将清理后的掩膜赋值回 mask_final（如果你后续还要用 mask_final）
-        mask_final = cleaned_mask.clone(); 
-        // 5. 找轮廓
-        std::vector<std::vector<cv::Point>> contours;
-        std::vector<cv::Vec4i> hierarchy;
-        cv::findContours(mask_final, contours, hierarchy, cv::RETR_EXTERNAL, cv::CHAIN_APPROX_SIMPLE);
+        return dst;
+    }
 
-        cv::Mat result_img = img.clone();
+
+
+    //判断灯条颜色
+    std::string ImageConverter::judgeArmorColor(const cv::Mat& src_img, const cv::Mat& mask) {
 
         //一开始用split拆分，会发现很容易受环境的影响，后面改成提取mask但是单通道无法直接转换
-cv::Mat result_img_1 = img.clone();
-cv::Mat copy = mask_final.clone();
-// 1. 确保 mask 是单通道
-if (copy.channels() != 1) {
-    cv::cvtColor(copy, copy, cv::COLOR_BGR2GRAY);
+
+        // 1. 确保 mask 是单通道
+    if (mask.channels() != 1) {
+        cv::cvtColor(mask, mask, cv::COLOR_BGR2GRAY);
+    }
+        // 2. 使用 mask 提取原始图像中的感兴趣区域 (ROI) 像素
+        // 方法：计算原始图像在 mask 非零区域的均值
+    cv::Scalar mean_bgr = cv::mean(src_img,mask); 
+
+    double B = mean_bgr[0];
+    double G = mean_bgr[1];
+    double R = mean_bgr[2];
+
+    // 3. 增加鲁棒性判断：不仅比较 R 和 B，还要看饱和度或差值
+    // 红色特征：R 远大于 B 和 G
+    // 蓝色特征：B 远大于 R 和 G
+
+    double diff_rb = R - B;
+
+    if (diff_rb > 30) { 
+        // 红色分量显著高于蓝色
+        return "Light is RED\n";
+    }  
+    else if (diff_rb < -30) { 
+        // 蓝色分量显著高于红色
+        return "Light is BLUE\n";
+    } 
+    else {
+        // 差值太小，可能是白色、灰色或噪声
+        return "Color Unclear\n";
+    }
 }
-// 2. 使用 mask 提取原始图像中的感兴趣区域 (ROI) 像素
-// 方法：计算原始图像在 mask 非零区域的均值
-cv::Scalar mean_bgr = cv::mean(result_img_1,copy); 
 
-double B = mean_bgr[0];
-double G = mean_bgr[1];
-double R = mean_bgr[2];
+    
+    std::vector<cv::RotatedRect> ImageConverter::filterLightBars(const std::vector<std::vector<cv::Point>>& contours,const cv::Mat& dst) {
+    std::vector<cv::RotatedRect> Light_bars;
 
-// 3. 增加鲁棒性判断：不仅比较 R 和 B，还要看饱和度或差值
-// 红色特征：R 远大于 B 和 G
-// 蓝色特征：B 远大于 R 和 G
-
-double diff_rb = R - B;
-
-if (diff_rb > 30) { 
-    // 红色分量显著高于蓝色
-    ROS_INFO("Light is RED\n");
-} 
-else if (diff_rb < -30) { 
-    // 蓝色分量显著高于红色
-    ROS_INFO("Light is BLUE\n");
-} 
-else {
-    // 差值太小，可能是白色、灰色或噪声
-    ROS_INFO("Color Unclear\n");
-}
-
-
-
-        std::vector<cv::RotatedRect> Light_bars;
-
-        for (size_t i = 0;i < contours.size();i++){
+    cv::RotatedRect rect;
+    for (size_t i = 0;i < contours.size();i++){
 
             double area = cv::contourArea(contours[i]);
             if (area < 20) 
@@ -250,7 +255,7 @@ else {
             continue; 
 
         
-            cv::RotatedRect rect = cv::minAreaRect(contours[i]);
+            rect = cv::minAreaRect(contours[i]);
 
             cv::Rect rect_box = rect.boundingRect();
 
@@ -308,179 +313,181 @@ else {
 
                 ROS_INFO("Contour: area=%.2f, w=%.2f, h=%.2f, rate=%.2f, angle=%.2f",area, width, height, height/width, angle);
 
+            Light_bars.push_back(rect);
+        }
+    return Light_bars;
 
-            
-            
-            //绿色筛选框
-                // cv::Scalar draw_color = cv::Scalar(0,255,0);
+}
 
-                // //获取矩阵的四个顶点
 
-                // std::vector<std::vector<cv::Point>> boxContours(1);
-                // cv::Point2f vertices[4];
-                // rect.points(vertices);
+    void ImageConverter::pairAndDrawArmor(const std::vector<cv::RotatedRect>& Light_bars, cv::Mat& result_img) {
+    std::vector<cv::Point2f> centers_final_last;
 
-                // //     for (int n = 0;n<4;n++){
-                // //         boxContours[0].push_back(cv::Point(cvRound(vertices[n].x),cvRound(vertices[n].y)));
-                // //     }
-                // //     std::vector<std::vector<cv::Point>> boxContours1(1,boxContours[0]);
-                    
-                // //     cv::drawContours(result_img,boxContours,-1,draw_color,2);
-                // //     //绘制轮廓，线绿色，宽2
+        for(size_t i = 0;i < Light_bars.size();i++){
+            for(size_t j = i+1;j < Light_bars.size();j++){
+                //；两个灯条中心
+                cv::Point2f center1 = Light_bars[i].center;
+                cv::Point2f center2 = Light_bars[j].center;
+                //两个等条的旋转矩形信息
+                cv::RotatedRect rect1 = Light_bars[i];
+                cv::RotatedRect rect2 = Light_bars[j];
 
-                // // }
-                  
+                    //两个灯条筛选出长宽之后，找最短的长度
+                float height_light_1 = std::max(rect1.size.width,rect1.size.height);
+                float height_light_2 = std::max(rect2.size.width,rect2.size.height);
+                float min_height = std::min (height_light_1,height_light_2);
 
-                Light_bars.push_back(rect);
-
-                std::vector<cv::Point2f> pairLightbars(const std::vector<cv::RotatedRect>& light_bars) ;
-                std::vector<cv::Point2f> centers_final_last;
-
-                for(size_t i = 0;i < Light_bars.size();i++){
-                    for(size_t j = i+1;j < Light_bars.size();j++){
-                        //；两个灯条中心
-                        cv::Point2f center1 = Light_bars[i].center;
-                        cv::Point2f center2 = Light_bars[j].center;
-                        //两个等条的旋转矩形信息
-                        cv::RotatedRect rect1 = Light_bars[i];
-                        cv::RotatedRect rect2 = Light_bars[j];
-
-                        //两个灯条筛选出长宽之后，找最短的长度
-                        float height_light_1 = std::max(rect1.size.width,rect1.size.height);
-                        float height_light_2 = std::max(rect2.size.width,rect2.size.height);
-                        float min_height = std::min (height_light_1,height_light_2);
-
-                        float change = abs(height_light_1-height_light_2);
-                        if(change >5)
+                float change = abs(height_light_1-height_light_2);
+                if(change >5)
                         continue;
 
-                        //两个灯条之间的距离
-                        float distance = norm(center1 - center2);
+                //两个灯条之间的距离
+                float distance = norm(center1 - center2);
 
-                        //装甲板的长和灯条宽度比值
-                        double rate_light_1 = distance / min_height;
+                //装甲板的长和灯条宽度比值
+                double rate_light_1 = distance / min_height;
 
-                        if(rate_light_1 < 1.5 || rate_light_1 >6)
+                if(rate_light_1 < 1.5 || rate_light_1 >6)
                         continue;
 
-                        //灯条角度
-                        float angle_light_1 = rect1.angle;
-                        float angle_light_2 = rect2.angle;
+                //灯条角度
+                float angle_light_1 = rect1.angle;
+                float angle_light_2 = rect2.angle;
 
-                        if(angle_light_1 < -45)
-                        angle_light_1 += 90;
+                if(angle_light_1 < -45)
+                    angle_light_1 += 90;
                         
-                        if(angle_light_2 < -45)
-                        angle_light_2 += 90;
+                if(angle_light_2 < -45)
+                    angle_light_2 += 90;
 
-                        float dis_angle = abs(angle_light_1 - angle_light_2);
+                if (angle_light_1>40 && angle_light_2 >40)
+                    continue;
+
+                float dis_angle = abs(angle_light_1 - angle_light_2);
                         
-                        if(dis_angle > 6)
-                        continue;
+                if(dis_angle > 5)
+                    continue;
 
                         
 
-                        //灯条的水平距离和数值长度
-                        float horizontal_distance = abs(center1.x - center2.x);
-                        float vertical_distanch = abs(center1.y - center2.y);
+                //灯条的水平距离和数值长度
+                float horizontal_distance = abs(center1.x - center2.x);
+                float vertical_distanch = abs(center1.y - center2.y);
 
-                        //补充：查y轴偏离
-                        if(vertical_distanch >15.0f)
+                //补充：查y轴偏离
+                if(vertical_distanch >15.0f)
                         continue;
 
-                        if(horizontal_distance < vertical_distanch)
+                if(horizontal_distance < vertical_distanch)
                         continue;
 
-                        //计算装甲板中心
-                        cv::Point2f center_final((center1.x+center2.x)/2,(center1.y+center2.y)/2);
 
-                        cv::Point2f center_point = (center1 + center2)/2.0;
+  
 
-                        centers_final_last.push_back(center_final); //把后者信息赋给前者
+
+            //计算装甲板中心
+                cv::Point2f center_final((center1.x+center2.x)/2,(center1.y+center2.y)/2);
+
+                cv::Point2f center_point = (center1 + center2)/2.0;
+
+                centers_final_last.push_back(center_final); //把后者信息赋给前者
 
                         float center_height = (height_light_1 + height_light_2)/2;
                         float center_width = distance;
                         float center_angle = (angle_light_1 + angle_light_2)/2;
 
                     
-                        // 3. 构造装甲板的旋转矩形
+                // 3. 构造装甲板的旋转矩形
 
-                        cv::RotatedRect ban_rect (center_point,cv::Size(center_width,center_height),center_angle);
+                cv::RotatedRect ban_rect (center_point,cv::Size(center_width,center_height),center_angle);
 
-                        cv::Point2f ban_vertices[4];
-                        ban_rect.points(ban_vertices);
+                cv::Point2f ban_vertices[4];
+                ban_rect.points(ban_vertices);
 
-
-                        // float h_half = min_height/2;
-                        // float w_half = distance / 2;
-
-                        // float cos_a = std::cos((angle_light_1+angle_light_2)/2);
-                        // float sin_a = std::sin((angle_light_1+angle_light_2)/2);
-
-                        // cv::Point2f corner[4];
-                        // corner[0] = {center_final.x-w_half*cos_a,center_final.y+h_half*sin_a};
-                        // corner[1] = {center_final.x+w_half*cos_a,center_final.y+h_half*sin_a};
-                        // corner[2] = {center_final.x+w_half*cos_a,center_final.y-h_half*sin_a};
-                        // corner[3] = {center_final.x-w_half*cos_a,center_final.y-h_half*sin_a};
-
-                        // std::vector<cv::Point2f> dst_points{
-                        //     cv::Point2f(0,0),
-                        //     cv::Point2f(240,0),
-                        //     cv::Point2f(240,120),
-                        //     cv::Point2f(0,120)
-                        // };
-                        // std::vector<cv::Point2f> src_point{corner[0],corner[1],corner[2],corner[3]};
                         
-                        // cv::Mat H4 = cv::getPerspectiveTransform(src_point,dst_points);
-                        // cv::Mat warped_ban;
-
-                        // cv::warpPerspective(result_img,warped_ban,H4,cv::Size(240,120));
 
 
-                        if(rate_light_1 <= 3.35){
-
-
-                            for(int i =0 ;i<4;i++){
-                            cv::line(result_img,cv::Point2f(ban_vertices[i]),cv::Point2f(ban_vertices[(i+1)%4]),cv::Scalar(0,255,0),3);
-                        }
-                        ROS_INFO("Small armor plate detected");
-                    }
-                        else {
-                        for(int i =0 ;i<4;i++){
-                
-                            cv::line(result_img,cv::Point2f(ban_vertices[i]),cv::Point2f(ban_vertices[(i+1)%4]),cv::Scalar(0,0,255),3);
-                        }
-                        ROS_INFO("Large armor plate detected");
-                    }
-            
-                }
-
-                cv_bridge::CvImage out_contour_img;
-                out_contour_img.header = msg -> header;
-                out_contour_img.encoding = sensor_msgs::image_encodings::BGR8;
-                out_contour_img.image = result_img;
-                contours_pub.publish(out_contour_img.toImageMsg());
-            
-        
+        if(rate_light_1 <= 3.3){
+            for(int i =0 ;i<4;i++){
+                cv::line(result_img,cv::Point2f(ban_vertices[i]),cv::Point2f(ban_vertices[(i+1)%4]),cv::Scalar(0,255,0),3);
+            }
+            ROS_INFO("Small armor plate detected");
         }
-    
+        else {
+            for(int i =0 ;i<4;i++){               
+                cv::line(result_img,cv::Point2f(ban_vertices[i]),cv::Point2f(ban_vertices[(i+1)%4]),cv::Scalar(0,0,255),3);
+            }
+            ROS_INFO("Large armor plate detected");
+            }            
+        }
     }
 }
 
-    void ImageConverter::CameraCallback(const sensor_msgs::CameraInfo& msg)
-    {
-        std::lock_guard<std::mutex>lock(info_mutex_);
-
-        K = cv::Mat(3,3,CV_64F,(void*)msg.K.data()).clone();
-
-        D = cv::Mat(msg.D.size(),1,CV_64F , (void*)msg.D.data()).clone();
 
 
-        camera_info = true;
 
-    }
+//主函数回调
+void ImageConverter::ImageCallback(const sensor_msgs::ImageConstPtr& msg){
+        ROS_INFO("Received image,encoding:%s",msg->encoding.c_str());
+
+        ros::Time stamp = msg->header.stamp;
+        std::string frame_id = msg->header.frame_id;
+        
+        cv_bridge::CvImageConstPtr cv_ptr;
+
+        try{
+            cv_ptr = cv_bridge::toCvShare(msg, sensor_msgs::image_encodings::BGR8);
+         }
+    
+        catch(cv_bridge::Exception& e)
+        {
+            ROS_ERROR("cv_bridge exception:%s",e.what());
+            return;
+        }
+
+        cv::Mat img = undistorImage(cv_ptr -> image);
+    
+        //需要将 cv::Mat 转回 ROS 消息
+        cv_bridge::CvImage out_cv_img;
+        out_cv_img.header = msg->header; // 保留原始 header 的时间戳和 frame_id
+        out_cv_img.encoding = sensor_msgs::image_encodings::BGR8;
+        out_cv_img.image = img;
+        image_pub.publish(out_cv_img.toImageMsg());
 
 
+        cv::Mat frame = img;
+        cv::Mat hsv;
+        cv::cvtColor(frame,hsv,cv::COLOR_BGR2HSV);
+        cv::Mat mask_final =generateColorMask(hsv);
+        
+        cv::Mat res;
+        cv::bitwise_and(frame,frame,res,mask_final);
+
+        cv_bridge::CvImage out_mark_img;
+        out_mark_img.header = msg->header;
+        out_mark_img.encoding =sensor_msgs::image_encodings::BGR8;
+        out_mark_img.image = res;
+        mark_pub.publish(out_mark_img.toImageMsg());
+
+        cv::Mat dst = preprocessMask(mask_final);
+
+        judgeArmorColor(img,mask_final);
+
+        std::vector<std::vector<cv::Point>> contours;
+        std::vector<cv::Vec4i> hierarchy;
+        cv::findContours(mask_final, contours, hierarchy, cv::RETR_EXTERNAL, cv::CHAIN_APPROX_SIMPLE);
+        cv::Mat result_img = img.clone();
+        std::vector<cv::RotatedRect> Light_bars = filterLightBars(contours,result_img);
+
+                
+        cv_bridge::CvImage out_contour_img;
+        out_contour_img.header = msg -> header;
+        out_contour_img.encoding = sensor_msgs::image_encodings::BGR8;
+        out_contour_img.image = result_img;
+        contours_pub.publish(out_contour_img.toImageMsg());
+            
+        
+        }
 
 
     int main(int argc,char** argv){
