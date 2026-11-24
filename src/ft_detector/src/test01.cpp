@@ -63,8 +63,11 @@ class ImageConverter{
         double x_center;
         Eigen::Quaterniond q;
         cv::Mat tvec;
+        int armor_id;
     };
     std::vector<ArmorResult> results;
+
+    std::map<int, ros::Time> last_published_stamp_;//上一次发布时间的变量
     
   
 
@@ -374,10 +377,20 @@ else {
                 std::vector<cv::Point2f> centers_final_last;
 
                 int armor_id = 0;
+
+                std::set<size_t> used_light_bar_ids;
                
+                
+                std::vector<ImageConverter::ArmorResult> results;
 
                 for(size_t i = 0;i < Light_bars.size();i++){
+                    if(used_light_bar_ids.count(i)) 
+                    continue;
+
                     for(size_t j = i+1;j < Light_bars.size();j++){
+                        if(used_light_bar_ids.count(j))
+                        continue;
+
                         //；两个灯条中心
                         cv::Point2f center1 = Light_bars[i].center;
                         cv::Point2f center2 = Light_bars[j].center;
@@ -426,6 +439,7 @@ else {
                         if(horizontal_distance < vertical_distanch)
                         continue;
 
+                        
                         //计算装甲板中心
                         cv::Point2f center_final((center1.x+center2.x)/2,(center1.y+center2.y)/2);
 
@@ -437,11 +451,8 @@ else {
                         
 
                         double  center_height = (height_light_1 + height_light_2)/2;
-                        double  light_width = (rect1.size.width + rect2.size.width)/2;
+                        double  center_width = distance;
                         double  center_angle = (angle_light_1 + angle_light_2)/2;
-
-                        double center_width = distance + light_width;
-                        
 
                 
 
@@ -495,7 +506,7 @@ else {
                         }
 
 
-                std::vector<cv::Point2f> img_points{
+                std::vector<cv::Point2d> img_points{
                     ban_vertices[TL],
                     ban_vertices[TR],
                     ban_vertices[BR],
@@ -504,8 +515,8 @@ else {
 
                 
   
-                        double ARMOR_WIDTH ;
-                        double ARMOR_HEIGHT;
+                        double Light_WIDTH ;
+                        double Light_HEIGHT;
                     
                         if(rate_light_1 <= 3.5){
 
@@ -513,8 +524,8 @@ else {
                             for(int i =0 ;i<4;i++){
                             cv::line(result_img,cv::Point2f(ban_vertices[i]),cv::Point2f(ban_vertices[(i+1)%4]),cv::Scalar(0,255,0),3);
                         }
-                        ARMOR_WIDTH = 0.125;
-                        ARMOR_HEIGHT = 0.120;
+                        Light_WIDTH = 0.135;
+                        Light_HEIGHT = 0.060;
                         
                         // ROS_INFO("Small armor plate detected");
                     }
@@ -523,8 +534,8 @@ else {
                 
                             cv::line(result_img,cv::Point2f(ban_vertices[i]),cv::Point2f(ban_vertices[(i+1)%4]),cv::Scalar(0,0,255),3);
                         }
-                        ARMOR_WIDTH = 0.235;
-                        ARMOR_HEIGHT = 0.127;
+                        Light_WIDTH = 0.230;
+                        Light_HEIGHT = 0.060;
                         // ROS_INFO("Large armor plate detected");
                     }
             
@@ -543,105 +554,60 @@ bool local_camera_info = false;
                     //pnp 位姿解算
 
 
-                    std::vector <cv::Point3f> object_points{//板子四个点
-                        {-float(ARMOR_WIDTH/2),-float(ARMOR_HEIGHT/2),0},
-                        {float(ARMOR_WIDTH/2),-float(ARMOR_HEIGHT/2),0},
-                        {float(ARMOR_WIDTH/2),float(ARMOR_HEIGHT/2),0},
-                        {-float(ARMOR_WIDTH/2),float(ARMOR_HEIGHT/2),0}
+                    std::vector <cv::Point3d> object_points{//板子四个点
+                        {-Light_WIDTH/2,-Light_HEIGHT/2,0},
+                        {Light_WIDTH/2,-Light_HEIGHT/2,0},
+                        {Light_WIDTH/2,Light_HEIGHT/2,0},
+                        {-Light_WIDTH/2,Light_HEIGHT/2,0}
                     };
                     
 
-                    
+                    cv::Mat rvec,tvec;
                     bool solvepnp =false;
 
-                    if(camera_info  && img_points.size() == 4 && object_points.size() == 4){
-                        std::vector<cv::Mat> rvecs,tvecs;
-                       // solvepnp = cv::solvePnP(object_points,img_points,local_K,local_D,rvec,tvec,false,cv::SOLVEPNP_IPPE);
-                    // std::vector<cv::Point2f> object_1_points;
-                    // std::vector<cv::Point3f> test_point_test01{
-                    //     {0.03,0,0},
-                    //     {0,0.03,0},
-                    //     {0,0,0.03},
-                    // };
+                    if(local_camera_info){
+                        solvepnp = cv::solvePnP(object_points,img_points,local_K,local_D,rvec,tvec,false,cv::SOLVEPNP_IPPE);
+                    std::vector<cv::Point2d> object_1_points;
+                    std::vector<cv::Point3d> test_point_test01{
+                        {0.03,0,0},
+                        {0,0.03,0},
+                        {0,0,0.03},
+                    };
 
-                    //if(solvepnp){
-                    //cv::projectPoints(test_point_test01,rvec,tvec,local_K,local_D,object_1_points);
-                    //}
+                    if(solvepnp){
+                    cv::projectPoints(test_point_test01,rvec,tvec,local_K,local_D,object_1_points);
+                    }
 
                     // 从中心点画三轴，直观展示位姿
-                //         if(object_1_points.size() == 3){
-                //             cv::line(result_img, center_point, object_1_points[0], cv::Scalar(0,0,255), 2); 
-                //             cv::line(result_img, center_point, object_1_points[1], cv::Scalar(0,255,0), 2); 
-                //             cv::line(result_img, center_point, object_1_points[2], cv::Scalar(255,0,0), 2); 
+                        if(object_1_points.size() == 3){
+                            cv::line(result_img, center_point, object_1_points[0], cv::Scalar(0,0,255), 2); 
+                            cv::line(result_img, center_point, object_1_points[1], cv::Scalar(0,255,0), 2); 
+                            cv::line(result_img, center_point, object_1_points[2], cv::Scalar(255,0,0), 2); 
 
-                // }
-
-
-                //重投影
-                
-                
-             bool success = cv::solvePnPGeneric(object_points, img_points, local_K, local_D, rvecs, tvecs, cv::SOLVEPNP_IPPE);
-
-         
-    // 解算结果有效性校验
-if (!success || rvecs.empty() || tvecs.empty() || rvecs.size() != tvecs.size()) {
-    ROS_WARN("PnP solve failed or no valid solution");
-    continue;
-}
-
-                cv::Mat best_rvec, best_tvec;
-                double min_error = std::numeric_limits<double>::max();
-
-                bool found_valid_solution = false;
-                
-                for (int i = 0; i < rvecs.size(); i++) {
-
-                    cv::Mat current_rvec = rvecs[i];
-                    cv::Mat current_tvec = tvecs[i];
-            
-                    if(current_tvec.at<double>(2) <= 0.01){
-                        continue;}
-
-
-                    if (!success||rvecs.empty() || tvecs.empty()){
-                    continue;
-                    }
-
-                    std::vector<cv::Point2f> projectedPoints;
-                    // 把3D点用这个解投影回2D图像
-                       cv::projectPoints(object_points, current_rvec, current_tvec, local_K, local_D, projectedPoints);
-                    // 计算重投影误差 (所有点的误差平方和)
-                    double error = 0;
-                    for (size_t j = 0; j < img_points.size(); j++) {
-                        
-                        error += cv::norm(cv::Point2f(img_points[j]) - projectedPoints[j]);
-                    }
-                    // 选出误差最小的那个解
-                    if (error < min_error) {
-                        min_error = error;
-                        best_rvec = current_rvec;
-                        best_tvec = current_tvec;
-                        found_valid_solution = true;
-                    }
                 }
-                    // 此时 best_rvec 和 best_tvec 就是最符合图像的解
 
-                    //防止反转
-                if(found_valid_solution && !best_tvec.empty()){
                 cv::Mat R;
-                cv::Rodrigues(best_rvec,R);
+                cv::Rodrigues(rvec,R);
 
                 Eigen::Quaterniond q = matToQuat(R);
 
                 ImageConverter::ArmorResult res;
                 res.x_center = center_point.x;
 
+                res.q = q.normalized(); // 四元数归一化，避免TF树旋转漂移
+                res.tvec = tvec.clone();
+
                 res.q = q;
-                res.tvec = best_tvec.clone();
+                res.tvec = tvec.clone();
+
+                res.armor_id = i;
 
                 results.push_back(res);
                 //ROS_INFO("Quat: x=%.3f, y=%.3f, z=%.3f, w=%.3f", q.x(), q.y(), q.z(), q.w());
-                }
+
+                // 【新增】标记这两个灯条已被占用，不能再参与其他配对
+                used_light_bar_ids.insert(i);
+                used_light_bar_ids.insert(j);
                 
                 
             }
@@ -652,17 +618,14 @@ if (!success || rvecs.empty() || tvecs.empty() || rvecs.size() != tvecs.size()) 
 
             
 }
-    std::set<int>published_ids;
 
     std::sort(results.begin(), results.end(), [](const ArmorResult& a, const ArmorResult& b) {
         return a.x_center < b.x_center;
     });
 
     for(size_t i = 0;i<results.size();i++){
-        if(published_ids.count(i)){
-            continue;
-        }
-        poseCallback(results[i].q,results[i].tvec, msg->header.stamp,i);
+        
+        poseCallback(results[i].q,results[i].tvec, msg->header.stamp,results[i].armor_id);
         
     }
 
@@ -682,6 +645,12 @@ if (!success || rvecs.empty() || tvecs.empty() || rvecs.size() != tvecs.size()) 
     };
 
     void ImageConverter::poseCallback (const Eigen::Quaterniond& q , const cv::Mat& tvec ,ros::Time stamp,int index){
+
+        // 过滤重复时间戳，完全相同的TF直接跳过不发布
+    if (last_published_stamp_.count(index) && last_published_stamp_[index] == stamp) {
+        return;
+    }
+    last_published_stamp_[index] = stamp;
 
         static tf2_ros::TransformBroadcaster br;//激活
         geometry_msgs::TransformStamped transformstamped;//通信对象；
