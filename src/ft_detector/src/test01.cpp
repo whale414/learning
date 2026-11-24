@@ -17,6 +17,14 @@
 
 #include<cstring>
 
+//tf发布
+#include <tf2/LinearMath/Quaternion.h>
+#include <tf2_ros/transform_broadcaster.h>
+
+//四元数
+#include<Eigen/Dense>         //先引用Eigen再用细致的
+#include <opencv2/core/eigen.hpp>   //矩阵转四元数
+
 
 
 class ImageConverter{
@@ -47,6 +55,18 @@ class ImageConverter{
     void ImageCallback(const sensor_msgs::ImageConstPtr& msg);
     void CameraCallback(const sensor_msgs::CameraInfo& msg);
 
+    void poseCallback (const Eigen::Quaterniond &q , const cv::Mat& tvec ,ros::Time stamp,int index);
+
+    tf2_ros::TransformBroadcaster tf_broadcaster_;
+
+    struct ArmorResult {
+        double x_center;
+        Eigen::Quaterniond q;
+        cv::Mat tvec;
+    };
+    std::vector<ArmorResult> results;
+    
+  
 
 
 
@@ -69,6 +89,19 @@ class ImageConverter{
     }
 
 };   
+
+       Eigen::Quaterniond matToQuat(const cv::Mat& R){
+
+        Eigen::Matrix3d m;
+        cv::cv2eigen(R,m);
+        //矩阵构造四元数；
+        Eigen::Quaterniond q(m);   //必须单位化
+        q.normalize();
+        return q;
+        
+    }
+
+
 
 
     void ImageConverter::ImageCallback(const sensor_msgs::ImageConstPtr& msg){
@@ -232,6 +265,7 @@ else {
 
         std::vector<cv::RotatedRect> Light_bars;
 
+
         //由于卡顿：提取声明；
         cv::Mat mask_roi;
 
@@ -339,6 +373,8 @@ else {
         }
                 std::vector<cv::Point2f> centers_final_last;
 
+                int armor_id = 0;
+               
 
                 for(size_t i = 0;i < Light_bars.size();i++){
                     for(size_t j = i+1;j < Light_bars.size();j++){
@@ -379,7 +415,7 @@ else {
                         continue;
                         
 
-                        //灯条的水平距离和数值长度
+                        //装甲板的水平距离和数值长度
                         float horizontal_distance = std::abs(center1.x - center2.x);
                         float vertical_distanch = std::abs(center1.y - center2.y);
 
@@ -395,19 +431,21 @@ else {
 
                         cv::Point2f center_point = (center1 + center2)/2.0;
 
-                        centers_final_last.push_back(center_final); //把后者信息赋给前者
+                        centers_final_last.push_back(center_final); //把后者信息赋给前者、
+
+
+                        
 
                         double  center_height = (height_light_1 + height_light_2)/2;
-                        double  center_width = distance;
+                        double  light_width = (rect1.size.width + rect2.size.width)/2;
                         double  center_angle = (angle_light_1 + angle_light_2)/2;
 
-                    
+                        double center_width = distance + light_width;
+                        
 
+                
 
-                        // 3. 构造装甲板的旋转矩形
-
-                        //原先使用角度推算img_point的范围但是失败了（容易混乱导致pnp失败）
-                        //查询建议换角度；
+                        // 构造装甲板的旋转矩形//2D
 
 
                         cv::RotatedRect ban_rect (center_point,cv::Size2f(center_width,center_height),center_angle);
@@ -416,39 +454,58 @@ else {
                         ban_rect.points(ban_vertices);
 
 
-                        // 计算4个顶点的极角（弧度）
-                        std::vector<std::pair<double, int>> vertex_polar;
+                       
+                       
+                        int TL=0,TR=0,BR=0,BL=0;
+                        
+                        double a=ban_vertices[0].x+ban_vertices[0].y;
+                        double b=ban_vertices[0].x-ban_vertices[0].y;
+                        double c=ban_vertices[0].x+ban_vertices[0].y;
+                        double d=ban_vertices[0].x-ban_vertices[0].y;
+                        
+
                         for(int i = 0; i < 4; i++){
-                        double dx = ban_vertices[i].x - center_point.x;
-                        double dy = ban_vertices[i].y - center_point.y;
-                         // 计算极角，范围 [-π, π]，对应从X轴正方向逆时针旋转的角度
-                        double angle = atan2(dy, dx);
-                        vertex_polar.emplace_back(angle, i);
+                            double add = ban_vertices[i].x+ban_vertices[i].y;
+                            double diff =ban_vertices[i].x-ban_vertices[i].y;
+                        
+                            //左上 -x -y；
+                            if(add<a){
+                                a =add;
+                                TL = i;
+                            }
+
+                            //右上  +x，-y；
+                            if(diff > b){
+                                b = diff;
+                                TR = i;
+                            }
+
+                            //BR +x +y
+                            if(add >c){
+                                c = add;
+                                BR = i;
+                            }
+
+                            //-x,+y;
+                            if(diff <d){
+                                d = diff;
+                                BL = i;
+                            }
+
                         }
 
-                         //按极角从小到大排序，得到标准逆时针顺序的4个顶点
-                        std::sort(vertex_polar.begin(), vertex_polar.end());
 
-                         //  提取排序后的4个顶点索引，自动适配任意旋转角度的装甲板
-                        int p2_idx = vertex_polar[0].second; // 角度最小：右下区域点
-                        int p3_idx = vertex_polar[1].second; // 角度次小：左下区域点
-                        int p0_idx = vertex_polar[2].second; // 角度次大：左上区域点
-                        int p1_idx = vertex_polar[3].second; // 角度最大：右上区域点
-
-                //  生成严格与3D点一一对应的2D点集，完全规避原排序逻辑的笔误
-                std::vector<cv::Point2d> img_points{
-                    ban_vertices[p0_idx],
-                    ban_vertices[p1_idx],
-                    ban_vertices[p2_idx],
-                    ban_vertices[p3_idx]
+                std::vector<cv::Point2f> img_points{
+                    ban_vertices[TL],
+                    ban_vertices[TR],
+                    ban_vertices[BR],
+                    ban_vertices[BL]
                 };
 
-                       
-                       
-
-
+                
+  
                         double ARMOR_WIDTH ;
-                        double Light_HEIGHT = 0.02;
+                        double ARMOR_HEIGHT;
                     
                         if(rate_light_1 <= 3.5){
 
@@ -456,7 +513,8 @@ else {
                             for(int i =0 ;i<4;i++){
                             cv::line(result_img,cv::Point2f(ban_vertices[i]),cv::Point2f(ban_vertices[(i+1)%4]),cv::Scalar(0,255,0),3);
                         }
-                        ARMOR_WIDTH = 0.12;
+                        ARMOR_WIDTH = 0.125;
+                        ARMOR_HEIGHT = 0.120;
                         
                         // ROS_INFO("Small armor plate detected");
                     }
@@ -466,6 +524,7 @@ else {
                             cv::line(result_img,cv::Point2f(ban_vertices[i]),cv::Point2f(ban_vertices[(i+1)%4]),cv::Scalar(0,0,255),3);
                         }
                         ARMOR_WIDTH = 0.235;
+                        ARMOR_HEIGHT = 0.127;
                         // ROS_INFO("Large armor plate detected");
                     }
             
@@ -484,54 +543,128 @@ bool local_camera_info = false;
                     //pnp 位姿解算
 
 
-                    std::vector <cv::Point3d> object_points{//板子四个点
-                        {-ARMOR_WIDTH/2,-Light_HEIGHT/2,0},
-                        {ARMOR_WIDTH/2,-Light_HEIGHT/2,0},
-                        {ARMOR_WIDTH/2,Light_HEIGHT/2,0},
-                        {-ARMOR_WIDTH/2,Light_HEIGHT/2,0}
+                    std::vector <cv::Point3f> object_points{//板子四个点
+                        {-float(ARMOR_WIDTH/2),-float(ARMOR_HEIGHT/2),0},
+                        {float(ARMOR_WIDTH/2),-float(ARMOR_HEIGHT/2),0},
+                        {float(ARMOR_WIDTH/2),float(ARMOR_HEIGHT/2),0},
+                        {-float(ARMOR_WIDTH/2),float(ARMOR_HEIGHT/2),0}
                     };
                     
 
-                    cv::Mat rvec,tvec;
+                    
                     bool solvepnp =false;
 
-                    if(camera_info){
-                        solvepnp = cv::solvePnP(object_points,img_points,local_K,local_D,rvec,tvec,false,cv::SOLVEPNP_IPPE);
-                    if(!solvepnp){
-                        solvepnp = cv::solvePnP(object_points,img_points,local_K,local_D,rvec,tvec,false,cv::SOLVEPNP_EPNP);
-                    }
-                    if(!solvepnp){
-                        solvepnp = cv::solvePnP(object_points,img_points,local_K,local_D,rvec,tvec,false,cv::SOLVEPNP_ITERATIVE);
-                    }
-                        // if(solvepnp){
-                        //     ROS_INFO("PnP success, z distance: %.3f m", tvec.at<double>(2));
-                        // } else {
-                        //     ROS_WARN("PnP solve failed, skip projection");
-                        // }
+                    if(camera_info  && img_points.size() == 4 && object_points.size() == 4){
+                        std::vector<cv::Mat> rvecs,tvecs;
+                       // solvepnp = cv::solvePnP(object_points,img_points,local_K,local_D,rvec,tvec,false,cv::SOLVEPNP_IPPE);
+                    // std::vector<cv::Point2f> object_1_points;
+                    // std::vector<cv::Point3f> test_point_test01{
+                    //     {0.03,0,0},
+                    //     {0,0.03,0},
+                    //     {0,0,0.03},
+                    // };
 
-                    std::vector<cv::Point2d> object_1_points;
-                    std::vector<cv::Point3d> test_point_test01{
-                        {0.03,0,0},
-                        {0,0.03,0},
-                        {0,0,0.03},
-                    };
-
-                    if(solvepnp){
-                    cv::projectPoints(test_point_test01,rvec,tvec,local_K,local_D,object_1_points);
-                    }
+                    //if(solvepnp){
+                    //cv::projectPoints(test_point_test01,rvec,tvec,local_K,local_D,object_1_points);
+                    //}
 
                     // 从中心点画三轴，直观展示位姿
-                        if(object_1_points.size() == 3){
-                            cv::line(result_img, center_point, object_1_points[0], cv::Scalar(0,0,255), 2); 
-                            cv::line(result_img, center_point, object_1_points[1], cv::Scalar(0,255,0), 2); 
-                            cv::line(result_img, center_point, object_1_points[2], cv::Scalar(255,0,0), 2); 
+                //         if(object_1_points.size() == 3){
+                //             cv::line(result_img, center_point, object_1_points[0], cv::Scalar(0,0,255), 2); 
+                //             cv::line(result_img, center_point, object_1_points[1], cv::Scalar(0,255,0), 2); 
+                //             cv::line(result_img, center_point, object_1_points[2], cv::Scalar(255,0,0), 2); 
 
-                }
-            }
+                // }
 
-            }
+
+                //重投影
+                
+                
+             bool success = cv::solvePnPGeneric(object_points, img_points, local_K, local_D, rvecs, tvecs, cv::SOLVEPNP_IPPE);
+
+         
+    // 解算结果有效性校验
+if (!success || rvecs.empty() || tvecs.empty() || rvecs.size() != tvecs.size()) {
+    ROS_WARN("PnP solve failed or no valid solution");
+    continue;
+}
+
+                cv::Mat best_rvec, best_tvec;
+                double min_error = std::numeric_limits<double>::max();
+
+                bool found_valid_solution = false;
+                
+                for (int i = 0; i < rvecs.size(); i++) {
+
+                    cv::Mat current_rvec = rvecs[i];
+                    cv::Mat current_tvec = tvecs[i];
             
+                    if(current_tvec.at<double>(2) <= 0.01){
+                        continue;}
+
+
+                    if (!success||rvecs.empty() || tvecs.empty()){
+                    continue;
+                    }
+
+                    std::vector<cv::Point2f> projectedPoints;
+                    // 把3D点用这个解投影回2D图像
+                       cv::projectPoints(object_points, current_rvec, current_tvec, local_K, local_D, projectedPoints);
+                    // 计算重投影误差 (所有点的误差平方和)
+                    double error = 0;
+                    for (size_t j = 0; j < img_points.size(); j++) {
+                        
+                        error += cv::norm(cv::Point2f(img_points[j]) - projectedPoints[j]);
+                    }
+                    // 选出误差最小的那个解
+                    if (error < min_error) {
+                        min_error = error;
+                        best_rvec = current_rvec;
+                        best_tvec = current_tvec;
+                        found_valid_solution = true;
+                    }
+                }
+                    // 此时 best_rvec 和 best_tvec 就是最符合图像的解
+
+                    //防止反转
+                if(found_valid_solution && !best_tvec.empty()){
+                cv::Mat R;
+                cv::Rodrigues(best_rvec,R);
+
+                Eigen::Quaterniond q = matToQuat(R);
+
+                ImageConverter::ArmorResult res;
+                res.x_center = center_point.x;
+
+                res.q = q;
+                res.tvec = best_tvec.clone();
+
+                results.push_back(res);
+                //ROS_INFO("Quat: x=%.3f, y=%.3f, z=%.3f, w=%.3f", q.x(), q.y(), q.z(), q.w());
+                }
+                
+                
+            }
+
         }
+
+    
+
+            
+}
+    std::set<int>published_ids;
+
+    std::sort(results.begin(), results.end(), [](const ArmorResult& a, const ArmorResult& b) {
+        return a.x_center < b.x_center;
+    });
+
+    for(size_t i = 0;i<results.size();i++){
+        if(published_ids.count(i)){
+            continue;
+        }
+        poseCallback(results[i].q,results[i].tvec, msg->header.stamp,i);
+        
+    }
 
         cv_bridge::CvImage out_contour_img;
         out_contour_img.header = msg -> header;
@@ -539,6 +672,45 @@ bool local_camera_info = false;
         out_contour_img.image = result_img;
         contours_pub.publish(out_contour_img.toImageMsg());
     }
+
+
+
+
+    struct posedata{
+        
+        std::string frame_id;
+    };
+
+    void ImageConverter::poseCallback (const Eigen::Quaterniond& q , const cv::Mat& tvec ,ros::Time stamp,int index){
+
+        static tf2_ros::TransformBroadcaster br;//激活
+        geometry_msgs::TransformStamped transformstamped;//通信对象；
+
+        transformstamped.header.stamp = stamp;
+        transformstamped.header.frame_id = "camera_optical_frame";
+        
+        transformstamped.child_frame_id = "armor_" + std::to_string(index);
+
+        //tvec
+        transformstamped.transform.translation.x = tvec.at<double>(0);
+        transformstamped.transform.translation.y = tvec.at<double>(1);
+        transformstamped.transform.translation.z = tvec.at<double>(2);
+
+        //四元数
+        transformstamped.transform.rotation.w = q.w();
+        transformstamped.transform.rotation.x = q.x();
+        transformstamped.transform.rotation.y = q.y();
+        transformstamped.transform.rotation.z = q.z();
+
+        // ROS_INFO("tvec:x=%.3f,y=%.3f,z=%.3f",tvec.at<double>(0),tvec.at<double>(1),tvec.at<double>(2));
+        
+        br.sendTransform(transformstamped);
+
+    }
+
+
+
+
 
     void ImageConverter::CameraCallback(const sensor_msgs::CameraInfo& msg)
     {

@@ -18,10 +18,14 @@ find_package(catkin REQUIRED COMPONENTS
   rqt_reconfigure
   rviz
   rosbag
+
+  geometry_msgs
+  tf2_ros
 )
 
 ## System dependencies are found with CMake's conventions
 find_package(OpenCV REQUIRED)
+find_package(Eigen3 REQUIRED)
 
 
 ## Uncomment this if the package has a setup.py. This macro ensures
@@ -78,7 +82,7 @@ find_package(OpenCV REQUIRED)
 # generate_messages(
 #   DEPENDENCIES
 #  c std_msgs
-# )
+
 
 ################################################
 ## Declare ROS dynamic reconfigure parameters ##
@@ -126,6 +130,7 @@ include_directories(
 # include
   ${catkin_INCLUDE_DIRS}
   ${OpenCV_INCLUDE_DIRS}
+  ${EIGEN3_INCLUDE_DIRS}
 )
 
 ## Declare a C++ library
@@ -148,6 +153,8 @@ include_directories(
 ## target back to the shorter version for ease of user use
 ## e.g. "rosrun someones_pkg node" instead of "rosrun someones_pkg someones_pkg_node"
 # set_target_properties(${PROJECT_NAME}_node PROPERTIES OUTPUT_NAME node PREFIX "")
+
+target_include_directories(test01 PRIVATE ${EIGEN3_INCLUDE_DIRS})
 
 ## Add cmake target dependencies of the executable
 ## same as for the library above
