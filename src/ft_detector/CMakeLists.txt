@@ -28,6 +28,7 @@ find_package(catkin REQUIRED COMPONENTS
 ## System dependencies are found with CMake's conventions
 find_package(OpenCV REQUIRED)
 find_package(Eigen3 REQUIRED)
+find_package(yaml-cpp REQUIRED)
 
 
 ## Uncomment this if the package has a setup.py. This macro ensures
@@ -173,6 +174,7 @@ include_directories(
  target_link_libraries(test01
    ${catkin_LIBRARIES}
    ${OpenCV_LIBS}
+   yaml-cpp
  )
 
 #############

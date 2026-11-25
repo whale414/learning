@@ -28,11 +28,16 @@
 #include<Eigen/Dense>         //先引用Eigen再用细致的
 #include <opencv2/core/eigen.hpp>   //矩阵转四元数
 
+#include<ros/package.h>
+#include<yaml-cpp/yaml.h>
+
+
 
 
 class ImageConverter{
     private:
     ros::NodeHandle nh_;
+    std::string value;
 
     image_transport::ImageTransport it_;
     
@@ -44,12 +49,9 @@ class ImageConverter{
     ros::Publisher ft_pub;
     ros::Publisher image_ft_pub;
 
-
-
     double fx ,fy , cx , cy ,img_height ,img_width;
     cv::Mat K;
     cv::Mat D;
-    std::string image_topic,info_topic,pub_topic,ft_topic,image_ft_topic;
 
     bool camera_info = false;
 
@@ -73,9 +75,77 @@ class ImageConverter{
     std::vector<ArmorResult> results;
 
     std::map<int, ros::Time> last_published_stamp_;//上一次发布时间的变量
-    
-  
 
+    //加载
+    std::string file_path = ros::package::getPath("ft_detector") + "/config/yaml.yaml";
+    
+    YAML::Node config = YAML::LoadFile(file_path);
+
+    //读
+    std::string image_topic = config["image_topic"].as<std::string>();
+    std::string info_topic = config["info_topic"].as<std::string>();
+    std::string pub_topic = config["pub_topic"].as<std::string>();
+    std::string image_ft_topic = config["image_ft_topic"].as<std::string>();
+    std::string ft_topic = config["ft_topic"].as<std::string>();
+
+    int queue_size = config["queue_size"].as<int>();
+
+    int light_red1_top_H = config["Light_red1"]["top_H"].as<int>();
+    int light_red1_bottom_H = config["Light_red1"]["bottom_H"].as<int>();
+    int light_red1_top_S = config["Light_red1"]["top_S"].as<int>();
+    int light_red1_bottom_S = config["Light_red1"]["bottom_S"].as<int>();
+    int light_red1_top_V = config["Light_red1"]["top_V"].as<int>();
+    int light_red1_bottom_V = config["Light_red1"]["bottom_V"].as<int>();
+
+    int light_red2_top_H = config["Light_red2"]["top_H"].as<int>();
+    int light_red2_bottom_H= config["Light_red2"]["bottom_H"].as<int>();
+    int light_red2_top_S = config["Light_red2"]["top_S"].as<int>();
+    int light_red2_bottom_S = config["Light_red2"]["bottom_S"].as<int>();
+    int light_red2_top_V = config["Light_red2"]["top_V"].as<int>();
+    int light_red2_bottom_V = config["Light_red2"]["bottom_V"].as<int>();
+
+    int light_blue_top_H = config["Light_blue"]["top_H"].as<int>();
+    int light_blue_bottom_H = config["Light_blue"]["bottom_H"].as<int>();
+    int light_blue_top_S = config["Light_blue"]["top_S"].as<int>();
+    int light_blue_bottom_S = config["Light_blue"]["bottom_S"].as<int>();
+    int light_blue_top_V = config["Light_blue"]["top_V"].as<int>();
+    int light_blue_bottom_V = config["Light_blue"]["bottom_V"].as<int>();
+
+    int light_orange_top_H = config["Light_orange1"]["top_H"].as<int>();
+    int light_orange_bottom_H = config["Light_orange1"]["bottom_H"].as<int>();
+    int light_orange_top_S = config["Light_orange1"]["top_S"].as<int>();
+    int light_orange_bottom_S = config["Light_orange1"]["bottom_S"].as<int>();
+    int light_orange_top_V = config["Light_orange1"]["top_V"].as<int>();
+    int light_orange_bottom_V = config["Light_orange1"]["bottom_V"].as<int>();
+
+    double hull_area_Top = config["hull_area_Top"].as<double>();
+    double solidity_top = config["solidity_top"].as<double>();
+
+    double Light_area_top = config["Light_area_top"].as<double>();
+    double Light_area_Bottom = config["Light_area_Bottom"].as<double>();
+
+    float rect_area_Bottom = config["rect_area_Bottom"].as<float>();
+    double fill_ratio_Bottom = config["fill_ratio_Bottom"].as<double>();
+
+    double rate_Light_Top = config["rate_Light_Top"].as<double>();
+    double rate_Light_Bottom = config["rate_Light_Bottom"].as<double>();
+
+    float rate_armor_Top = config["rate_armor_Top"].as<float>();
+    float rate_armor_Bottom = config["rate_armor_Bottom"].as<float>();
+
+    float dis_angle_Top = config["dis_angle_Top"].as<float>();
+
+    float vertical_distance_Top = config["vertical_distance_Top"].as<float>();
+
+    double rate_light_small_Top = config["rate_light_small_Top"].as<double>();
+
+    double Light_WIDTH_small = config["Light_WIDTH_small"].as<double>();
+    double Light_WIDTH_large = config["Light_WIDTH_large"].as<double>();
+    double Light_Height_small = config["Light_Height_small"].as<double>();
+    double Light_Height_large = config["Light_Height_large"].as<double>();
+
+    double width_min = config["width_min"].as<double>();
+    double height_min = config["height_min"].as<double>();
 
 
     public:
@@ -89,16 +159,17 @@ class ImageConverter{
         // nh_.param<std::string>("mark_topic",mark_topic,"/ft/debug/mask_image");
         // nh_.param<std::string>("contours_topic",contours_topic,"/ft/debug/contours_image");
 
-        image_sub = it_.subscribe(image_topic,1,&ImageConverter::ImageCallback,this);
-        info_sub = nh_.subscribe(info_topic,1,&ImageConverter::CameraCallback,this);
+        image_sub = it_.subscribe(image_topic,queue_size,&ImageConverter::ImageCallback,this);
+        info_sub = nh_.subscribe(info_topic,queue_size,&ImageConverter::CameraCallback,this);
 
 
-        image_pub = it_.advertise(pub_topic,1);
-        ft_pub = nh_.advertise<ft_detector::all>(ft_topic,1);
-        image_ft_pub = nh_.advertise<sensor_msgs::Image>(image_ft_topic,1);
+        image_pub = it_.advertise(pub_topic,queue_size);
+        ft_pub = nh_.advertise<ft_detector::all>(ft_topic,queue_size);
+        image_ft_pub = nh_.advertise<sensor_msgs::Image>(image_ft_topic,queue_size);
 
         // mark_pub = it_.advertise(mark_topic,1);
         // contours_pub = it_.advertise(contours_topic,1);
+        
     }
 
 };   
@@ -172,18 +243,18 @@ class ImageConverter{
 
         cv::cvtColor(frame,hsv,cv::COLOR_BGR2HSV);
 
-        cv::Scalar lower_red1(0,200,100);
-        cv::Scalar upper_red1(10,255,255);
+        cv::Scalar lower_red1(light_red1_bottom_H,light_red1_bottom_S,light_red1_bottom_V);
+        cv::Scalar upper_red1(light_red1_top_H,light_red1_top_S,light_red1_top_V);
 
-        cv::Scalar lower_red2(160,200,100);
-        cv::Scalar upper_red2(180,255,255);
+        cv::Scalar lower_red2(light_red2_bottom_H,light_red2_bottom_H,light_red2_bottom_V);
+        cv::Scalar upper_red2(light_red2_top_H,light_red2_top_S,light_red2_top_V);
 
-        cv::Scalar lower_orange1(10,100,100);
-        cv::Scalar upper_orange1(35,255,255);
+        cv::Scalar lower_orange1(light_orange_bottom_H,light_orange_bottom_S,light_orange_bottom_V);
+        cv::Scalar upper_orange1(light_orange_top_H,light_orange_top_S,light_orange_top_V);
 
 
-        cv::Scalar lower_blue(90,120,80);
-        cv::Scalar upper_blue(130,255,255);
+        cv::Scalar lower_blue(light_blue_bottom_H,light_blue_bottom_S,light_blue_bottom_V);
+        cv::Scalar upper_blue(light_blue_top_H,light_blue_top_S,light_blue_top_V);
 
         cv::inRange(hsv,lower_blue,upper_blue,mask);
         cv::inRange(hsv,lower_red1,upper_red1,mask1);
@@ -294,11 +365,11 @@ else {
             cv::convexHull(contours[i], hull);
             double hull_area = cv::contourArea(hull);
 
-            if (hull_area < 1e-6) 
+            if (hull_area < hull_area_Top) 
             continue;
             double solidity = area / hull_area;
 
-            if (solidity < 0.8) 
+            if (solidity < solidity_top) 
             continue; 
 
         
@@ -327,11 +398,11 @@ else {
             float width = rect.size.width;
             float height = rect.size.height;
 
-            if(area < 100.0  || area > 5000){
+            if(area < Light_area_Bottom  || area > Light_area_top){
                 continue;
             }
 
-            if(width <0.1f ||height < 0.1f)
+            if(width <width_min ||height < height_min)
             continue;
 
             //ai建议：height不一定一直大于width
@@ -342,26 +413,21 @@ else {
             //填充率过滤
             
             float rect_area = width * height;
-            if (rect_area < 1e-6) 
+            if (rect_area < rect_area_Bottom) 
             continue;
             double fill_ratio = area / rect_area;
 
-            if (fill_ratio < 0.4) 
+            if (fill_ratio < fill_ratio_Bottom) 
             continue;
 
 
             double rate = height / width;
 
-                if(rate<1 || rate>6)
+                if(rate< rate_Light_Bottom || rate > rate_Light_Top)
                 continue;
-                
-           
 
                 // ROS_INFO("Contour: area=%.2f, w=%.2f, h=%.2f, rate=%.2f, angle=%.2f",area, width, height, height/width, angle);
 
-
-        
-            
             //绿色筛选框
                 // cv::Scalar draw_color = cv::Scalar(0,255,0);
 
@@ -421,7 +487,7 @@ else {
                         //装甲板的长和灯条宽度比值
                         double rate_light_1 = distance / min_height;
 
-                        if(rate_light_1 < 1.5 || rate_light_1 >6)
+                        if(rate_light_1 < rate_armor_Bottom || rate_light_1 > rate_armor_Top)
                         continue;
 
                         //灯条角度
@@ -436,19 +502,19 @@ else {
 
                         float dis_angle = abs(angle_light_1 - angle_light_2);
                         
-                        if(dis_angle > 3)
+                        if(dis_angle > dis_angle_Top)
                         continue;
                         
 
                         //装甲板的水平距离和数值长度
                         float horizontal_distance = std::abs(center1.x - center2.x);
-                        float vertical_distanch = std::abs(center1.y - center2.y);
+                        float vertical_distance = std::abs(center1.y - center2.y);
 
                         //补充：查y轴偏离
-                        if(vertical_distanch >20.0f)
+                        if(vertical_distance >vertical_distance_Top)
                         continue;
 
-                        if(horizontal_distance < vertical_distanch)
+                        if(horizontal_distance < vertical_distance)
                         continue;
 
                         
@@ -530,12 +596,12 @@ else {
                         double Light_WIDTH ;
                         double Light_HEIGHT;
                     
-                        if(rate_light_1 <= 3.5){
+                        if(rate_light_1 <= rate_light_small_Top){
                             for(int i =0 ;i<4;i++){
                             cv::line(result_img,cv::Point2f(ban_vertices[i]),cv::Point2f(ban_vertices[(i+1)%4]),cv::Scalar(0,255,0),3);
                         }
-                        Light_WIDTH = 0.135;
-                        Light_HEIGHT = 0.060;
+                        Light_WIDTH = Light_WIDTH_small;
+                        Light_HEIGHT = Light_Height_small;
                         
                         // ROS_INFO("Small armor plate detected");
                     }
@@ -544,8 +610,8 @@ else {
                 
                             cv::line(result_img,cv::Point2f(ban_vertices[i]),cv::Point2f(ban_vertices[(i+1)%4]),cv::Scalar(0,0,255),3);
                         }
-                        Light_WIDTH = 0.230;
-                        Light_HEIGHT = 0.060;
+                        Light_WIDTH = Light_WIDTH_large;
+                        Light_HEIGHT = Light_Height_large;
                         large = true;
                         // ROS_INFO("Large armor plate detected");
                     }
@@ -759,7 +825,7 @@ bool local_camera_info = false;
         setlocale(LC_CTYPE,"zh_CN.utf8");
 
         ros::init(argc,argv,"image");
-       
+
         ImageConverter ic;
         
         ros::spin();
