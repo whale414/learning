@@ -1,3 +1,6 @@
+#include"ft_detector/armor.h"
+#include"ft_detector/all.h"
+
 #include"ros/ros.h"
 #include"image_transport/image_transport.h"
 #include"cv_bridge/cv_bridge.h"
@@ -15,7 +18,7 @@
 
 #include<opencv2/imgproc.hpp>
 
-#include<cstring>
+#include<std_msgs/String.h>
 
 //tf发布
 #include <tf2/LinearMath/Quaternion.h>
@@ -38,13 +41,15 @@ class ImageConverter{
     image_transport::Publisher image_pub;
     image_transport::Publisher mark_pub;
     image_transport::Publisher contours_pub;
+    ros::Publisher ft_pub;
+    ros::Publisher image_ft_pub;
 
 
 
     double fx ,fy , cx , cy ,img_height ,img_width;
     cv::Mat K;
     cv::Mat D;
-    std::string image_topic,info_topic,pub_topic,mark_topic,contours_topic;
+    std::string image_topic,info_topic,pub_topic,ft_topic,image_ft_topic;
 
     bool camera_info = false;
 
@@ -79,16 +84,21 @@ class ImageConverter{
         nh_.param<std::string>("image_topic",image_topic,"/hk_camera/image_raw");
         nh_.param<std::string>("info_topic",info_topic,"/hk_camera/camera_info");
         nh_.param<std::string>("pub_topic",pub_topic,"/ft/debug/image");
-        nh_.param<std::string>("mark_topic",mark_topic,"/ft/debug/mask_image");
-        nh_.param<std::string>("contours_topic",contours_topic,"/ft/debug/contours_image");
+        nh_.param<std::string>("ft_topic",ft_topic,"/ft/detection");
+        nh_.param<std::string>("image_ft_topic",image_ft_topic,"/ft/debug/image");
+        // nh_.param<std::string>("mark_topic",mark_topic,"/ft/debug/mask_image");
+        // nh_.param<std::string>("contours_topic",contours_topic,"/ft/debug/contours_image");
 
         image_sub = it_.subscribe(image_topic,1,&ImageConverter::ImageCallback,this);
         info_sub = nh_.subscribe(info_topic,1,&ImageConverter::CameraCallback,this);
 
 
         image_pub = it_.advertise(pub_topic,1);
-        mark_pub = it_.advertise(mark_topic,1);
-        contours_pub = it_.advertise(contours_topic,1);
+        ft_pub = nh_.advertise<ft_detector::all>(ft_topic,1);
+        image_ft_pub = nh_.advertise<sensor_msgs::Image>(image_ft_topic,1);
+
+        // mark_pub = it_.advertise(mark_topic,1);
+        // contours_pub = it_.advertise(contours_topic,1);
     }
 
 };   
@@ -186,11 +196,11 @@ class ImageConverter{
         cv::bitwise_or(mask_0,mask_orange,mask_final);
         cv::bitwise_and(frame,frame,res,mask_final);
 
-        cv_bridge::CvImage out_mark_img;
-        out_mark_img.header = msg->header;
-        out_mark_img.encoding =sensor_msgs::image_encodings::BGR8;
-        out_mark_img.image = res;
-        mark_pub.publish(out_mark_img.toImageMsg());
+        // cv_bridge::CvImage out_mark_img;
+        // out_mark_img.header = msg->header;
+        // out_mark_img.encoding =sensor_msgs::image_encodings::BGR8;
+        // out_mark_img.image = res;
+        // mark_pub.publish(out_mark_img.toImageMsg());
 
         cv::Mat dst;
 
@@ -250,10 +260,11 @@ double R = mean_bgr[2];
 // 蓝色特征：B 远大于 R 和 G
 
 double diff_rb = R - B;
-
+bool red = false;
 if (diff_rb > 10) { 
     // 红色分量显著高于蓝色
     ROS_INFO("Light is RED\n");
+    red = true;
 } 
 else if (diff_rb < -10) { 
     // 蓝色分量显著高于红色
@@ -380,7 +391,8 @@ else {
 
                 std::set<size_t> used_light_bar_ids;
                
-                
+                bool large = false;
+
                 std::vector<ImageConverter::ArmorResult> results;
 
                 for(size_t i = 0;i < Light_bars.size();i++){
@@ -519,8 +531,6 @@ else {
                         double Light_HEIGHT;
                     
                         if(rate_light_1 <= 3.5){
-
-
                             for(int i =0 ;i<4;i++){
                             cv::line(result_img,cv::Point2f(ban_vertices[i]),cv::Point2f(ban_vertices[(i+1)%4]),cv::Scalar(0,255,0),3);
                         }
@@ -536,6 +546,7 @@ else {
                         }
                         Light_WIDTH = 0.230;
                         Light_HEIGHT = 0.060;
+                        large = true;
                         // ROS_INFO("Large armor plate detected");
                     }
             
@@ -567,6 +578,12 @@ bool local_camera_info = false;
 
                     if(local_camera_info){
                         solvepnp = cv::solvePnP(object_points,img_points,local_K,local_D,rvec,tvec,false,cv::SOLVEPNP_IPPE);
+
+        // 【关键】只有PnP成功才继续后续逻辑，否则直接跳过当前装甲板
+    if(!solvepnp || rvec.empty() || tvec.empty() || tvec.total() != 3){
+        ROS_WARN_THROTTLE(1.0, "PnP solve failed, skip this armor");
+        continue;
+    }
                     std::vector<cv::Point2d> object_1_points;
                     std::vector<cv::Point3d> test_point_test01{
                         {0.03,0,0},
@@ -585,19 +602,28 @@ bool local_camera_info = false;
                             cv::line(result_img, center_point, object_1_points[2], cv::Scalar(255,0,0), 2); 
 
                 }
+                sensor_msgs::ImagePtr msg_img;
+                cv::Mat debug_img = result_img.clone();
+                msg_img = cv_bridge::CvImage(msg -> header,"bgr8",debug_img).toImageMsg();
+                image_ft_pub.publish(msg_img);
 
                 cv::Mat R;
                 cv::Rodrigues(rvec,R);
 
+        // 过滤旋转矩阵中的NaN值，避免生成无效四元数
+    if(cv::countNonZero(R != R) > 0){
+        ROS_WARN_THROTTLE(1.0, "Rotation matrix contains NaN, skip this armor");
+        continue;
+    }
+
+
                 Eigen::Quaterniond q = matToQuat(R);
+                q.normalized();//只做一次归一化
 
                 ImageConverter::ArmorResult res;
                 res.x_center = center_point.x;
 
-                res.q = q.normalized(); // 四元数归一化，避免TF树旋转漂移
-                res.tvec = tvec.clone();
-
-                res.q = q;
+                res.q = q; 
                 res.tvec = tvec.clone();
 
                 res.armor_id = i;
@@ -619,24 +645,50 @@ bool local_camera_info = false;
             
 }
 
+    ft_detector::all all1_msg;
+    all1_msg.header.stamp = msg -> header.stamp;
+    all1_msg.header.frame_id = "camera_optical_frame";
+
+
     std::sort(results.begin(), results.end(), [](const ArmorResult& a, const ArmorResult& b) {
         return a.x_center < b.x_center;
     });
 
     for(size_t i = 0;i<results.size();i++){
-        
+        ft_detector::armor single_msg;
+        single_msg.id ="armor "+std::to_string(i);
+        if(large){
+            single_msg.is_large_armor = true;
+        }
+        if(red){
+            single_msg.is_red = true;
+        }
+    // 你漏了
+    single_msg.Pose.position.x = results[i].tvec.at<double>(0, 0);
+    single_msg.Pose.position.y = results[i].tvec.at<double>(1, 0);
+    single_msg.Pose.position.z = results[i].tvec.at<double>(2, 0);
+
+        single_msg.Pose.orientation.x = results[i].q.x();
+        single_msg.Pose.orientation.y = results[i].q.y();
+        single_msg.Pose.orientation.z = results[i].q.z();
+        single_msg.Pose.orientation.w = results[i].q.w();
+
+        all1_msg.armors.push_back(single_msg);
+
         poseCallback(results[i].q,results[i].tvec, msg->header.stamp,results[i].armor_id);
         
     }
+    ft_pub.publish(all1_msg);
 
-        cv_bridge::CvImage out_contour_img;
-        out_contour_img.header = msg -> header;
-        out_contour_img.encoding = sensor_msgs::image_encodings::BGR8;
-        out_contour_img.image = result_img;
-        contours_pub.publish(out_contour_img.toImageMsg());
+        // cv_bridge::CvImage out_contour_img;
+        // out_contour_img.header = msg -> header;
+        // out_contour_img.encoding = sensor_msgs::image_encodings::BGR8;
+        // out_contour_img.image = result_img;
+        // image_pub.publish(out_contour_img.toImageMsg());
     }
 
 
+    
 
 
     struct posedata{
@@ -651,6 +703,12 @@ bool local_camera_info = false;
         return;
     }
     last_published_stamp_[index] = stamp;
+
+    // 【新增】tvec合法性检查，彻底杜绝越界崩溃
+    if(tvec.empty() || tvec.total() != 3 || tvec.type() != CV_64F){
+        ROS_WARN_THROTTLE(1.0, "Invalid tvec in poseCallback, skip armor_%d TF", index);
+        return;
+    }
 
         static tf2_ros::TransformBroadcaster br;//激活
         geometry_msgs::TransformStamped transformstamped;//通信对象；
@@ -701,8 +759,9 @@ bool local_camera_info = false;
         setlocale(LC_CTYPE,"zh_CN.utf8");
 
         ros::init(argc,argv,"image");
+       
         ImageConverter ic;
-
+        
         ros::spin();
         return 0;
     }

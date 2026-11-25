@@ -21,6 +21,8 @@ find_package(catkin REQUIRED COMPONENTS
 
   geometry_msgs
   tf2_ros
+
+  message_generation
 )
 
 ## System dependencies are found with CMake's conventions
@@ -58,11 +60,13 @@ find_package(Eigen3 REQUIRED)
 ##   * add every package in MSG_DEP_SET to generate_messages(DEPENDENCIES ...)
 
 ## Generate messages in the 'msg' folder
-# add_message_files(
-#   FILES
+add_message_files(
+   FILES
+   armor.msg
+   all.msg
 #   Message1.msg
 #   Message2.msg
-# )
+)
 
 ## Generate services in the 'srv' folder
 # add_service_files(
@@ -79,10 +83,11 @@ find_package(Eigen3 REQUIRED)
 # )
 
 ## Generate added messages and services with any dependencies listed here
-# generate_messages(
-#   DEPENDENCIES
-#  c std_msgs
-
+generate_messages(
+   DEPENDENCIES
+   std_msgs
+   geometry_msgs
+ )
 
 ################################################
 ## Declare ROS dynamic reconfigure parameters ##
@@ -114,6 +119,10 @@ find_package(Eigen3 REQUIRED)
 ## CATKIN_DEPENDS: catkin_packages dependent projects also need
 ## DEPENDS: system dependencies of this project that dependent projects also need
 catkin_package(
+	CATKIN_DEPENDS
+	std_msgs
+	geometry_msgs
+	message_runtime
 #  INCLUDE_DIRS include
 #  LIBRARIES ft_detector
 #  CATKIN_DEPENDS roscpp rospy std_msgs
@@ -154,11 +163,11 @@ include_directories(
 ## e.g. "rosrun someones_pkg node" instead of "rosrun someones_pkg someones_pkg_node"
 # set_target_properties(${PROJECT_NAME}_node PROPERTIES OUTPUT_NAME node PREFIX "")
 
-target_include_directories(test01 PRIVATE ${EIGEN3_INCLUDE_DIRS})
 
 ## Add cmake target dependencies of the executable
 ## same as for the library above
-# add_dependencies(${PROJECT_NAME}_node ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
+ add_dependencies(test01 ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
+ target_include_directories(test01 PRIVATE ${EIGEN3_INCLUDE_DIRS})
 
 ## Specify libraries to link a library or executable target against
  target_link_libraries(test01
