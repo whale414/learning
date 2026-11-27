@@ -1,5 +1,6 @@
 #include"ft_detector/armor.h"
 #include"ft_detector/all.h"
+#include"ft_detector/ftConfig.h"
 
 #include"ros/ros.h"
 #include"image_transport/image_transport.h"
@@ -31,7 +32,7 @@
 #include<ros/package.h>
 #include<yaml-cpp/yaml.h>
 
-
+#include<dynamic_reconfigure/server.h>
 
 
 class ImageConverter{
@@ -44,8 +45,8 @@ class ImageConverter{
     image_transport::Subscriber image_sub;
     ros::Subscriber info_sub;
     image_transport::Publisher image_pub;
-    image_transport::Publisher mark_pub;
-    image_transport::Publisher contours_pub;
+    // image_transport::Publisher mark_pub;
+    // image_transport::Publisher contours_pub;
     ros::Publisher ft_pub;
     ros::Publisher image_ft_pub;
 
@@ -59,11 +60,6 @@ class ImageConverter{
     sensor_msgs::CameraInfo::ConstPtr latest_info_;
     std::mutex info_mutex_;
 
-    void ImageCallback(const sensor_msgs::ImageConstPtr& msg);
-    void CameraCallback(const sensor_msgs::CameraInfo& msg);
-
-    void poseCallback (const Eigen::Quaterniond &q , const cv::Mat& tvec ,ros::Time stamp,int index);
-
     tf2_ros::TransformBroadcaster tf_broadcaster_;
 
     struct ArmorResult {
@@ -76,80 +72,156 @@ class ImageConverter{
 
     std::map<int, ros::Time> last_published_stamp_;//上一次发布时间的变量
 
-    //加载
-    std::string file_path = ros::package::getPath("ft_detector") + "/config/yaml.yaml";
-    
-    YAML::Node config = YAML::LoadFile(file_path);
+    int queue_size; 
 
-    //读
+    int Light_red1_top_H ;
+    int Light_red1_bottom_H; 
+    int Light_red1_top_S ;
+    int Light_red1_bottom_S;
+    int Light_red1_top_V ;
+    int Light_red1_bottom_V;
+
+    int Light_red2_top_H;
+    int Light_red2_bottom_H;
+    int Light_red2_top_S ;
+    int Light_red2_bottom_S;
+    int Light_red2_top_V;
+    int Light_red2_bottom_V;
+
+    int Light_blue_top_H;
+    int Light_blue_bottom_H;
+    int Light_blue_top_S;
+    int Light_blue_bottom_S;
+    int Light_blue_top_V;
+    int Light_blue_bottom_V;
+
+    int Light_orange1_top_H;
+    int Light_orange1_bottom_H;
+    int Light_orange1_top_S;
+    int Light_orange1_bottom_S;
+    int Light_orange1_top_V;
+    int Light_orange1_bottom_V;
+
+    double hull_area_Top;
+    double solidity_top;
+
+    double Light_area_top;
+    double Light_area_Bottom;
+
+    float rect_area_Bottom;
+    double fill_ratio_Bottom;
+
+    double rate_Light_Top;
+    double rate_Light_Bottom;
+
+    float rate_armor_Top;
+    float rate_armor_Bottom;
+
+    float dis_angle_Top;
+
+    float vertical_distance_Top;
+
+    double rate_light_small_Top;
+
+    double Light_WIDTH_small;
+    double Light_WIDTH_large;
+    double Light_Height_small;
+    double Light_Height_large;
+
+    double width_min;
+    double height_min;
+
+
+    void ImageCallback(const sensor_msgs::ImageConstPtr& msg);
+    void CameraCallback(const sensor_msgs::CameraInfo& msg);
+    void dyCallback(ft_detector::ftConfig &config,uint32_t level);
+    void poseCallback (const Eigen::Quaterniond &q , const cv::Mat& tvec ,ros::Time stamp,int index);
+
+    dynamic_reconfigure::Server<ft_detector::ftConfig>* server_;
+
+
+    public:
+    ImageConverter(ros::NodeHandle& nh):nh_("~"),it_(nh_){
+        //读
+        std::string file_path = ros::package::getPath("ft_detector") + "/config/yaml.yaml";
+    
+        YAML::Node config = YAML::LoadFile(file_path);
+
+         //读
     std::string image_topic = config["image_topic"].as<std::string>();
     std::string info_topic = config["info_topic"].as<std::string>();
     std::string pub_topic = config["pub_topic"].as<std::string>();
     std::string image_ft_topic = config["image_ft_topic"].as<std::string>();
     std::string ft_topic = config["ft_topic"].as<std::string>();
 
-    int queue_size = config["queue_size"].as<int>();
+    queue_size = config["queue_size"].as<int>();
 
-    int light_red1_top_H = config["Light_red1"]["top_H"].as<int>();
-    int light_red1_bottom_H = config["Light_red1"]["bottom_H"].as<int>();
-    int light_red1_top_S = config["Light_red1"]["top_S"].as<int>();
-    int light_red1_bottom_S = config["Light_red1"]["bottom_S"].as<int>();
-    int light_red1_top_V = config["Light_red1"]["top_V"].as<int>();
-    int light_red1_bottom_V = config["Light_red1"]["bottom_V"].as<int>();
+    Light_red1_top_H = config["Light_red1"]["top_H"].as<int>();
+    Light_red1_bottom_H = config["Light_red1"]["bottom_H"].as<int>();
+    Light_red1_top_S = config["Light_red1"]["top_S"].as<int>();
+    Light_red1_bottom_S = config["Light_red1"]["bottom_S"].as<int>();
+    Light_red1_top_V = config["Light_red1"]["top_V"].as<int>();
+    Light_red1_bottom_V = config["Light_red1"]["bottom_V"].as<int>();
 
-    int light_red2_top_H = config["Light_red2"]["top_H"].as<int>();
-    int light_red2_bottom_H= config["Light_red2"]["bottom_H"].as<int>();
-    int light_red2_top_S = config["Light_red2"]["top_S"].as<int>();
-    int light_red2_bottom_S = config["Light_red2"]["bottom_S"].as<int>();
-    int light_red2_top_V = config["Light_red2"]["top_V"].as<int>();
-    int light_red2_bottom_V = config["Light_red2"]["bottom_V"].as<int>();
+    Light_red2_top_H = config["Light_red2"]["top_H"].as<int>();
+    Light_red2_bottom_H= config["Light_red2"]["bottom_H"].as<int>();
+    Light_red2_top_S = config["Light_red2"]["top_S"].as<int>();
+    Light_red2_bottom_S = config["Light_red2"]["bottom_S"].as<int>();
+    Light_red2_top_V = config["Light_red2"]["top_V"].as<int>();
+    Light_red2_bottom_V = config["Light_red2"]["bottom_V"].as<int>();
 
-    int light_blue_top_H = config["Light_blue"]["top_H"].as<int>();
-    int light_blue_bottom_H = config["Light_blue"]["bottom_H"].as<int>();
-    int light_blue_top_S = config["Light_blue"]["top_S"].as<int>();
-    int light_blue_bottom_S = config["Light_blue"]["bottom_S"].as<int>();
-    int light_blue_top_V = config["Light_blue"]["top_V"].as<int>();
-    int light_blue_bottom_V = config["Light_blue"]["bottom_V"].as<int>();
+    Light_blue_top_H = config["Light_blue"]["top_H"].as<int>();
+    Light_blue_bottom_H = config["Light_blue"]["bottom_H"].as<int>();
+    Light_blue_top_S = config["Light_blue"]["top_S"].as<int>();
+    Light_blue_bottom_S = config["Light_blue"]["bottom_S"].as<int>();
+    Light_blue_top_V = config["Light_blue"]["top_V"].as<int>();
+    Light_blue_bottom_V = config["Light_blue"]["bottom_V"].as<int>();
 
-    int light_orange_top_H = config["Light_orange1"]["top_H"].as<int>();
-    int light_orange_bottom_H = config["Light_orange1"]["bottom_H"].as<int>();
-    int light_orange_top_S = config["Light_orange1"]["top_S"].as<int>();
-    int light_orange_bottom_S = config["Light_orange1"]["bottom_S"].as<int>();
-    int light_orange_top_V = config["Light_orange1"]["top_V"].as<int>();
-    int light_orange_bottom_V = config["Light_orange1"]["bottom_V"].as<int>();
+    Light_orange1_top_H = config["Light_orange1"]["top_H"].as<int>();
+    Light_orange1_bottom_H = config["Light_orange1"]["bottom_H"].as<int>();
+    Light_orange1_top_S = config["Light_orange1"]["top_S"].as<int>();
+    Light_orange1_bottom_S = config["Light_orange1"]["bottom_S"].as<int>();
+    Light_orange1_top_V = config["Light_orange1"]["top_V"].as<int>();
+    Light_orange1_bottom_V = config["Light_orange1"]["bottom_V"].as<int>();
 
-    double hull_area_Top = config["hull_area_Top"].as<double>();
-    double solidity_top = config["solidity_top"].as<double>();
+    hull_area_Top = config["hull_area_Top"].as<double>();
+    solidity_top = config["solidity_top"].as<double>();
 
-    double Light_area_top = config["Light_area_top"].as<double>();
-    double Light_area_Bottom = config["Light_area_Bottom"].as<double>();
+    Light_area_top = config["Light_area_top"].as<double>();
+    Light_area_Bottom = config["Light_area_Bottom"].as<double>();
 
-    float rect_area_Bottom = config["rect_area_Bottom"].as<float>();
-    double fill_ratio_Bottom = config["fill_ratio_Bottom"].as<double>();
+    rect_area_Bottom = config["rect_area_Bottom"].as<float>();
+    fill_ratio_Bottom = config["fill_ratio_Bottom"].as<double>();
 
-    double rate_Light_Top = config["rate_Light_Top"].as<double>();
-    double rate_Light_Bottom = config["rate_Light_Bottom"].as<double>();
+    rate_Light_Top = config["rate_Light_Top"].as<double>();
+    rate_Light_Bottom = config["rate_Light_Bottom"].as<double>();
 
-    float rate_armor_Top = config["rate_armor_Top"].as<float>();
-    float rate_armor_Bottom = config["rate_armor_Bottom"].as<float>();
+    rate_armor_Top = config["rate_armor_Top"].as<float>();
+    rate_armor_Bottom = config["rate_armor_Bottom"].as<float>();
 
-    float dis_angle_Top = config["dis_angle_Top"].as<float>();
+    dis_angle_Top = config["dis_angle_Top"].as<float>();
 
-    float vertical_distance_Top = config["vertical_distance_Top"].as<float>();
+    vertical_distance_Top = config["vertical_distance_Top"].as<float>();
 
-    double rate_light_small_Top = config["rate_light_small_Top"].as<double>();
+    rate_light_small_Top = config["rate_light_small_Top"].as<double>();
 
-    double Light_WIDTH_small = config["Light_WIDTH_small"].as<double>();
-    double Light_WIDTH_large = config["Light_WIDTH_large"].as<double>();
-    double Light_Height_small = config["Light_Height_small"].as<double>();
-    double Light_Height_large = config["Light_Height_large"].as<double>();
+    Light_WIDTH_small = config["Light_WIDTH_small"].as<double>();
+    Light_WIDTH_large = config["Light_WIDTH_large"].as<double>();
+    Light_Height_small = config["Light_Height_small"].as<double>();
+    Light_Height_large = config["Light_Height_large"].as<double>();
 
-    double width_min = config["width_min"].as<double>();
-    double height_min = config["height_min"].as<double>();
+    width_min = config["width_min"].as<double>();
+    height_min = config["height_min"].as<double>();
 
+        server_ = new dynamic_reconfigure::Server<ft_detector::ftConfig>(nh_);
 
-    public:
-    ImageConverter():it_(nh_){
+        //绑定回调
+        dynamic_reconfigure::Server<ft_detector::ftConfig>::CallbackType f;
+
+        //用boost：：bind把自定义dynamic函数绑定上去
+        f = boost::bind(&ImageConverter::dyCallback,this,_1,_2);
+        server_ ->setCallback(f);//设置给服务器，调用指定的值
+
         //读取参数
         nh_.param<std::string>("image_topic",image_topic,"/hk_camera/image_raw");
         nh_.param<std::string>("info_topic",info_topic,"/hk_camera/camera_info");
@@ -173,6 +245,53 @@ class ImageConverter{
     }
 
 };   
+    void ImageConverter::dyCallback(ft_detector::ftConfig &dyconfig,uint32_t level){
+        Light_red1_top_H = dyconfig.Light_red1_top_H;
+        Light_red1_bottom_H = dyconfig.Light_red1_bottom_H;
+        Light_red1_top_S = dyconfig.Light_red1_top_S;
+        Light_red1_bottom_S = dyconfig.Light_red1_bottom_S;
+        Light_red1_top_V = dyconfig.Light_red1_top_V;
+        Light_red1_bottom_V = dyconfig.Light_red1_top_V;
+        Light_red2_top_H = dyconfig.Light_red2_top_H;
+        Light_red2_bottom_H = dyconfig.Light_red2_bottom_H;
+        Light_red2_top_S = dyconfig.Light_red2_top_S;
+        Light_red2_bottom_S = dyconfig.Light_red2_bottom_S;
+        Light_red2_top_V = dyconfig.Light_red2_top_V;
+        Light_red2_bottom_V = dyconfig.Light_red2_bottom_V;
+        Light_blue_top_H = dyconfig.Light_blue_top_H;
+        Light_blue_bottom_H = dyconfig.Light_blue_bottom_H;
+        Light_blue_top_S = dyconfig.Light_blue_top_S;
+        Light_blue_bottom_S = dyconfig.Light_blue_bottom_S;
+        Light_blue_top_V = dyconfig.Light_blue_top_V;
+        Light_blue_bottom_V = dyconfig.Light_blue_bottom_V;
+        Light_orange1_top_H = dyconfig.Light_orange1_top_H;
+        Light_orange1_bottom_H = dyconfig.Light_orange1_bottom_H;
+        Light_orange1_top_S = dyconfig.Light_orange1_top_S;
+        Light_orange1_bottom_S = dyconfig.Light_orange1_bottom_S;
+        Light_orange1_top_V = dyconfig.Light_orange1_top_V;
+        Light_orange1_bottom_V = dyconfig.Light_orange1_bottom_V;
+        Light_area_top = dyconfig.Light_area_top ;
+        Light_area_Bottom = dyconfig.Light_area_Bottom;
+        rate_armor_Top = dyconfig.rate_armor_Top;
+        rate_armor_Bottom = dyconfig.rate_armor_Bottom;
+        rect_area_Bottom = dyconfig.rect_area_Bottom;
+        fill_ratio_Bottom = dyconfig.fill_ratio_Bottom;
+        vertical_distance_Top = dyconfig.vertical_distance_Top;
+        hull_area_Top = dyconfig.hull_area_Top;
+        solidity_top = dyconfig.solidity_top;
+
+        rate_light_small_Top = dyconfig.rate_light_small_Top;
+
+
+        rate_Light_Top = dyconfig.rate_Light_Top;
+        rate_Light_Bottom = dyconfig.rate_Light_Bottom;
+
+        dis_angle_Top = dyconfig.dis_angle_Top;
+    }
+
+
+
+    
 
        Eigen::Quaterniond matToQuat(const cv::Mat& R){
 
@@ -243,18 +362,18 @@ class ImageConverter{
 
         cv::cvtColor(frame,hsv,cv::COLOR_BGR2HSV);
 
-        cv::Scalar lower_red1(light_red1_bottom_H,light_red1_bottom_S,light_red1_bottom_V);
-        cv::Scalar upper_red1(light_red1_top_H,light_red1_top_S,light_red1_top_V);
+        cv::Scalar lower_red1(Light_red1_bottom_H,Light_red1_bottom_S,Light_red1_bottom_V);
+        cv::Scalar upper_red1(Light_red1_top_H,Light_red1_top_S,Light_red1_top_V);
 
-        cv::Scalar lower_red2(light_red2_bottom_H,light_red2_bottom_H,light_red2_bottom_V);
-        cv::Scalar upper_red2(light_red2_top_H,light_red2_top_S,light_red2_top_V);
+        cv::Scalar lower_red2(Light_red2_bottom_H,Light_red2_bottom_H,Light_red2_bottom_V);
+        cv::Scalar upper_red2(Light_red2_top_H,Light_red2_top_S,Light_red2_top_V);
 
-        cv::Scalar lower_orange1(light_orange_bottom_H,light_orange_bottom_S,light_orange_bottom_V);
-        cv::Scalar upper_orange1(light_orange_top_H,light_orange_top_S,light_orange_top_V);
+        cv::Scalar lower_orange1(Light_orange1_bottom_H,Light_orange1_bottom_S,Light_orange1_bottom_V);
+        cv::Scalar upper_orange1(Light_orange1_top_H,Light_orange1_top_S,Light_orange1_top_V);
 
 
-        cv::Scalar lower_blue(light_blue_bottom_H,light_blue_bottom_S,light_blue_bottom_V);
-        cv::Scalar upper_blue(light_blue_top_H,light_blue_top_S,light_blue_top_V);
+        cv::Scalar lower_blue(Light_blue_bottom_H,Light_blue_bottom_S,Light_blue_bottom_V);
+        cv::Scalar upper_blue(Light_blue_top_H,Light_blue_top_S,Light_blue_top_V);
 
         cv::inRange(hsv,lower_blue,upper_blue,mask);
         cv::inRange(hsv,lower_red1,upper_red1,mask1);
@@ -744,6 +863,7 @@ bool local_camera_info = false;
         poseCallback(results[i].q,results[i].tvec, msg->header.stamp,results[i].armor_id);
         
     }
+    ROS_INFO("Reached publish step, size: %zu", all1_msg.armors.size());
     ft_pub.publish(all1_msg);
 
         // cv_bridge::CvImage out_contour_img;
@@ -824,9 +944,10 @@ bool local_camera_info = false;
     int main(int argc,char** argv){
         setlocale(LC_CTYPE,"zh_CN.utf8");
 
-        ros::init(argc,argv,"image");
+        ros::init(argc,argv,"ft_detector_node");
 
-        ImageConverter ic;
+        ros::NodeHandle nh("~");
+        ImageConverter ic(nh);
         
         ros::spin();
         return 0;

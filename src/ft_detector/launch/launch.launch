@@ -1,13 +1,21 @@
 <launch>
     <param name="use_sim_time" value="true"/>
     <rosparam command="load" file="$(find ft_detector)/config/yaml.yaml"/>
+
     <node pkg="ft_detector" type="test01" name="ft_detector_node" output="screen">
     <param name="image_transport" value="compressed" />
     <param name= "image_topic" value= "/hk_camera/image_raw"/>
     <param name="info_topic" value="/hk_camera/camera_info"/>
-    <param name= "/use_sim_time" value="true"/>
-    </node>
+    <param name="image_ft_topic" value="/ft/debug/image"/>
+    <param name="ft_topic" value="/ft/detection"/>
 
-    <node pkg="rqt_image_view" type="rqt_image_view" name="rqt_image_view" args="/ft/debug/image" output="screen" />
-    
+    <param name="frame_id" value="camera_optical_frame"/>//统一
+    </node>
+frame
+    <node pkg="rqt_image_view" type="rqt_image_view" name="rqt_image_view" 
+    args="/ft/debug/image" output="screen" />
+    <node pkg="rviz" type="rviz" name = "rviz" 
+    args="-d $(find ft_detector)/config/ft.rviz" output="screen"/>
+    <node name="rqt_reconfigure" pkg="rqt_reconfigure" type="rqt_reconfigure" output="screen"/>
+
 </launch>

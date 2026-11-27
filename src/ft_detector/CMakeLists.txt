@@ -90,6 +90,10 @@ generate_messages(
    geometry_msgs
  )
 
+ generate_dynamic_reconfigure_options(
+   cfg/ft.cfg
+ )  
+
 ################################################
 ## Declare ROS dynamic reconfigure parameters ##
 ################################################
@@ -120,10 +124,13 @@ generate_messages(
 ## CATKIN_DEPENDS: catkin_packages dependent projects also need
 ## DEPENDS: system dependencies of this project that dependent projects also need
 catkin_package(
-	CATKIN_DEPENDS
+	CATKIN_DEPENDS 
+  rospy
+  roscpp
 	std_msgs
 	geometry_msgs
 	message_runtime
+  dynamic_reconfigure
 #  INCLUDE_DIRS include
 #  LIBRARIES ft_detector
 #  CATKIN_DEPENDS roscpp rospy std_msgs
@@ -137,7 +144,7 @@ catkin_package(
 ## Specify additional locations of header files
 ## Your package locations should be listed before other locations
 include_directories(
-# include
+ include
   ${catkin_INCLUDE_DIRS}
   ${OpenCV_INCLUDE_DIRS}
   ${EIGEN3_INCLUDE_DIRS}
@@ -167,7 +174,8 @@ include_directories(
 
 ## Add cmake target dependencies of the executable
 ## same as for the library above
- add_dependencies(test01 ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
+ add_dependencies(test01 ${PROJECT_NAME}_gencfg)
+ add_dependencies(test01 ${catkin_EXPORTED_TARGETS} ${${PROJECT_NAME}_EXPORTED_TARGETS})
  target_include_directories(test01 PRIVATE ${EIGEN3_INCLUDE_DIRS})
 
 ## Specify libraries to link a library or executable target against

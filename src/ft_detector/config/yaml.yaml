@@ -4,7 +4,7 @@ info_topic: "/hk_camera/camera_info"
 
 pub_topic: "/ft/debug/image"
 
-image_ft_topic: "/ft/debug/mask_image"
+image_ft_topic: "/ft/debug/image"
 
 ft_topic: "/ft/detection"
 
