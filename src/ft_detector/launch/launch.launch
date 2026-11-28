@@ -8,9 +8,17 @@
     <param name="info_topic" value="/hk_camera/camera_info"/>
     <param name="image_ft_topic" value="/ft/debug/image"/>
     <param name="ft_topic" value="/ft/detection"/>
-
     <param name="frame_id" value="camera_optical_frame"/>//统一
     </node>
+
+
+    <node pkg="ft_tracker" type="test02" name="ft_tracker_node" output="screen">
+    <rosparam command="load" file="$(find ft_detector)/config/yaml.yaml"/>
+    <param name= "ft_S_topic" value= "/ft/detection"/>
+    <param name= "ft_P_topic" value= "/ft/debug/marker"/>
+    <param name= "ft_T_topic" value= "/ft/track"/>
+    </node>
+
 frame
     <node pkg="rqt_image_view" type="rqt_image_view" name="rqt_image_view" 
     args="/ft/debug/image" output="screen" />

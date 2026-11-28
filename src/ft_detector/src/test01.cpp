@@ -146,73 +146,74 @@ class ImageConverter{
         std::string file_path = ros::package::getPath("ft_detector") + "/config/yaml.yaml";
     
         YAML::Node config = YAML::LoadFile(file_path);
+        YAML::Node det = config["ft_detector_node"];
 
-         //读
-    std::string image_topic = config["image_topic"].as<std::string>();
-    std::string info_topic = config["info_topic"].as<std::string>();
-    std::string pub_topic = config["pub_topic"].as<std::string>();
-    std::string image_ft_topic = config["image_ft_topic"].as<std::string>();
-    std::string ft_topic = config["ft_topic"].as<std::string>();
+    //读
+  
+    std::string image_topic = det["image_topic"].as<std::string>();
+    std::string info_topic = det["info_topic"].as<std::string>();
+    std::string pub_topic = det["pub_topic"].as<std::string>();
+    std::string image_ft_topic = det["image_ft_topic"].as<std::string>();
+    std::string ft_topic = det["ft_topic"].as<std::string>();
 
-    queue_size = config["queue_size"].as<int>();
+    queue_size = det["queue_size"].as<int>();
 
-    Light_red1_top_H = config["Light_red1"]["top_H"].as<int>();
-    Light_red1_bottom_H = config["Light_red1"]["bottom_H"].as<int>();
-    Light_red1_top_S = config["Light_red1"]["top_S"].as<int>();
-    Light_red1_bottom_S = config["Light_red1"]["bottom_S"].as<int>();
-    Light_red1_top_V = config["Light_red1"]["top_V"].as<int>();
-    Light_red1_bottom_V = config["Light_red1"]["bottom_V"].as<int>();
+    Light_red1_top_H = det["Light_red1"]["top_H"].as<int>();
+    Light_red1_bottom_H = det["Light_red1"]["bottom_H"].as<int>();
+    Light_red1_top_S = det["Light_red1"]["top_S"].as<int>();
+    Light_red1_bottom_S = det["Light_red1"]["bottom_S"].as<int>();
+    Light_red1_top_V = det["Light_red1"]["top_V"].as<int>();
+    Light_red1_bottom_V = det["Light_red1"]["bottom_V"].as<int>();
 
-    Light_red2_top_H = config["Light_red2"]["top_H"].as<int>();
-    Light_red2_bottom_H= config["Light_red2"]["bottom_H"].as<int>();
-    Light_red2_top_S = config["Light_red2"]["top_S"].as<int>();
-    Light_red2_bottom_S = config["Light_red2"]["bottom_S"].as<int>();
-    Light_red2_top_V = config["Light_red2"]["top_V"].as<int>();
-    Light_red2_bottom_V = config["Light_red2"]["bottom_V"].as<int>();
+    Light_red2_top_H = det["Light_red2"]["top_H"].as<int>();
+    Light_red2_bottom_H= det["Light_red2"]["bottom_H"].as<int>();
+    Light_red2_top_S = det["Light_red2"]["top_S"].as<int>();
+    Light_red2_bottom_S = det["Light_red2"]["bottom_S"].as<int>();
+    Light_red2_top_V = det["Light_red2"]["top_V"].as<int>();
+    Light_red2_bottom_V = det["Light_red2"]["bottom_V"].as<int>();
 
-    Light_blue_top_H = config["Light_blue"]["top_H"].as<int>();
-    Light_blue_bottom_H = config["Light_blue"]["bottom_H"].as<int>();
-    Light_blue_top_S = config["Light_blue"]["top_S"].as<int>();
-    Light_blue_bottom_S = config["Light_blue"]["bottom_S"].as<int>();
-    Light_blue_top_V = config["Light_blue"]["top_V"].as<int>();
-    Light_blue_bottom_V = config["Light_blue"]["bottom_V"].as<int>();
+    Light_blue_top_H = det["Light_blue"]["top_H"].as<int>();
+    Light_blue_bottom_H = det["Light_blue"]["bottom_H"].as<int>();
+    Light_blue_top_S = det["Light_blue"]["top_S"].as<int>();
+    Light_blue_bottom_S = det["Light_blue"]["bottom_S"].as<int>();
+    Light_blue_top_V = det["Light_blue"]["top_V"].as<int>();
+    Light_blue_bottom_V = det["Light_blue"]["bottom_V"].as<int>();
 
-    Light_orange1_top_H = config["Light_orange1"]["top_H"].as<int>();
-    Light_orange1_bottom_H = config["Light_orange1"]["bottom_H"].as<int>();
-    Light_orange1_top_S = config["Light_orange1"]["top_S"].as<int>();
-    Light_orange1_bottom_S = config["Light_orange1"]["bottom_S"].as<int>();
-    Light_orange1_top_V = config["Light_orange1"]["top_V"].as<int>();
-    Light_orange1_bottom_V = config["Light_orange1"]["bottom_V"].as<int>();
+    Light_orange1_top_H = det["Light_orange1"]["top_H"].as<int>();
+    Light_orange1_bottom_H = det["Light_orange1"]["bottom_H"].as<int>();
+    Light_orange1_top_S = det["Light_orange1"]["top_S"].as<int>();
+    Light_orange1_bottom_S = det["Light_orange1"]["bottom_S"].as<int>();
+    Light_orange1_top_V = det["Light_orange1"]["top_V"].as<int>();
+    Light_orange1_bottom_V = det["Light_orange1"]["bottom_V"].as<int>();
 
-    hull_area_Top = config["hull_area_Top"].as<double>();
-    solidity_top = config["solidity_top"].as<double>();
+    hull_area_Top = det["hull_area_Top"].as<double>();
+    solidity_top = det["solidity_top"].as<double>();
 
-    Light_area_top = config["Light_area_top"].as<double>();
-    Light_area_Bottom = config["Light_area_Bottom"].as<double>();
+    Light_area_top = det["Light_area_top"].as<double>();
+    Light_area_Bottom = det["Light_area_Bottom"].as<double>();
 
-    rect_area_Bottom = config["rect_area_Bottom"].as<float>();
-    fill_ratio_Bottom = config["fill_ratio_Bottom"].as<double>();
+    rect_area_Bottom = det["rect_area_Bottom"].as<float>();
+    fill_ratio_Bottom = det["fill_ratio_Bottom"].as<double>();
 
-    rate_Light_Top = config["rate_Light_Top"].as<double>();
-    rate_Light_Bottom = config["rate_Light_Bottom"].as<double>();
+    rate_Light_Top = det["rate_Light_Top"].as<double>();
+    rate_Light_Bottom = det["rate_Light_Bottom"].as<double>();
 
-    rate_armor_Top = config["rate_armor_Top"].as<float>();
-    rate_armor_Bottom = config["rate_armor_Bottom"].as<float>();
+    rate_armor_Top = det["rate_armor_Top"].as<float>();
+    rate_armor_Bottom = det["rate_armor_Bottom"].as<float>();
 
-    dis_angle_Top = config["dis_angle_Top"].as<float>();
+    dis_angle_Top = det["dis_angle_Top"].as<float>();
 
-    vertical_distance_Top = config["vertical_distance_Top"].as<float>();
+    vertical_distance_Top = det["vertical_distance_Top"].as<float>();
 
-    rate_light_small_Top = config["rate_light_small_Top"].as<double>();
+    rate_light_small_Top = det["rate_light_small_Top"].as<double>();
 
-    Light_WIDTH_small = config["Light_WIDTH_small"].as<double>();
-    Light_WIDTH_large = config["Light_WIDTH_large"].as<double>();
-    Light_Height_small = config["Light_Height_small"].as<double>();
-    Light_Height_large = config["Light_Height_large"].as<double>();
+    Light_WIDTH_small = det["Light_WIDTH_small"].as<double>();
+    Light_WIDTH_large = det["Light_WIDTH_large"].as<double>();
+    Light_Height_small = det["Light_Height_small"].as<double>();
+    Light_Height_large = det["Light_Height_large"].as<double>();
 
-    width_min = config["width_min"].as<double>();
-    height_min = config["height_min"].as<double>();
-
+    width_min = det["width_min"].as<double>();
+    height_min = det["height_min"].as<double>();
         server_ = new dynamic_reconfigure::Server<ft_detector::ftConfig>(nh_);
 
         //绑定回调
@@ -863,7 +864,7 @@ bool local_camera_info = false;
         poseCallback(results[i].q,results[i].tvec, msg->header.stamp,results[i].armor_id);
         
     }
-    ROS_INFO("Reached publish step, size: %zu", all1_msg.armors.size());
+    //ROS_INFO("Reached publish step, size: %zu", all1_msg.armors.size());
     ft_pub.publish(all1_msg);
 
         // cv_bridge::CvImage out_contour_img;

@@ -66,6 +66,10 @@ Visualization Manager:
           Value: true
         base_link:
           Value: true
+        base_pitch:
+          Value: true
+        base_yaw:
+          Value: true
         camera2_optical_frame:
           Value: true
         camera_link:
@@ -74,13 +78,9 @@ Visualization Manager:
           Value: true
         gimbal_imu:
           Value: true
-        left_back_pivot:
-          Value: true
         left_back_wheel:
           Value: true
         left_friction_wheel:
-          Value: true
-        left_front_pivot:
           Value: true
         left_front_wheel:
           Value: true
@@ -88,21 +88,13 @@ Visualization Manager:
           Value: true
         pitch:
           Value: true
-        right_back_pivot:
-          Value: true
         right_back_wheel:
           Value: true
         right_friction_wheel:
           Value: true
-        right_front_pivot:
-          Value: true
         right_front_wheel:
           Value: true
-        supply_frame:
-          Value: true
         trigger:
-          Value: true
-        wireless_frame:
           Value: true
         yaw:
           Value: true
@@ -113,46 +105,48 @@ Visualization Manager:
       Show Axes: true
       Show Names: true
       Tree:
+        armor_2:
+          {}
         odom:
           base_link:
-            left_back_pivot:
-              left_back_wheel:
+            base_yaw:
+              trigger:
                 {}
-            left_front_pivot:
-              left_front_wheel:
-                {}
-            right_back_pivot:
-              right_back_wheel:
-                {}
-            right_front_pivot:
-              right_front_wheel:
-                {}
-            trigger:
+              yaw:
+                base_pitch:
+                  pitch:
+                    camera2_optical_frame:
+                      {}
+                    camera_link:
+                      {}
+                    camera_optical_frame:
+                      armor_0:
+                        {}
+                      armor_1:
+                        {}
+                    gimbal_imu:
+                      {}
+                    left_friction_wheel:
+                      {}
+                    right_friction_wheel:
+                      {}
+            left_back_wheel:
               {}
-            yaw:
-              pitch:
-                camera2_optical_frame:
-                  {}
-                camera_link:
-                  {}
-                camera_optical_frame:
-                  armor_0:
-                    {}
-                  armor_1:
-                    {}
-                  armor_2:
-                    {}
-                gimbal_imu:
-                  {}
-                left_friction_wheel:
-                  {}
-                right_friction_wheel:
-                  {}
-              supply_frame:
-                {}
-              wireless_frame:
-                {}
+            left_front_wheel:
+              {}
+            right_back_wheel:
+              {}
+            right_front_wheel:
+              {}
       Update Interval: 0
+      Value: true
+    - Class: rviz/Marker
+      Enabled: true
+      Marker Topic: /ft/debug/marker
+      Name: Marker
+      Namespaces:
+        {}
+      Queue Size: 100
       Value: true
   Enabled: true
   Global Options:
@@ -182,7 +176,7 @@ Visualization Manager:
   Views:
     Current:
       Class: rviz/Orbit
-      Distance: 10
+      Distance: 3.5041186809539795
       Enable Stereo Rendering:
         Stereo Eye Separation: 0.05999999865889549
         Stereo Focal Distance: 1
@@ -198,9 +192,9 @@ Visualization Manager:
       Invert Z Axis: false
       Name: Current View
       Near Clip Distance: 0.009999999776482582
-      Pitch: 0.785398006439209
+      Pitch: -1.0296013355255127
       Target Frame: <Fixed Frame>
-      Yaw: 0.785398006439209
+      Yaw: 1.4353973865509033
     Saved: ~
 Window Geometry:
   Displays:
@@ -218,5 +212,5 @@ Window Geometry:
   Views:
     collapsed: false
   Width: 1200
-  X: 383
-  Y: 175
+  X: 530
+  Y: 344

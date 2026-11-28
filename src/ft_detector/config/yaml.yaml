@@ -1,82 +1,101 @@
-image_topic: "/hk_camera/image_raw"
+ft_detector_node:
+  image_topic: "/hk_camera/image_raw"
 
-info_topic: "/hk_camera/camera_info"
+  info_topic: "/hk_camera/camera_info"
 
-pub_topic: "/ft/debug/image"
+  pub_topic: "/ft/debug/image"
 
-image_ft_topic: "/ft/debug/image"
+  image_ft_topic: "/ft/debug/image"
 
-ft_topic: "/ft/detection"
-
-
-queue_size: 1
+  ft_topic: "/ft/detection"
 
 
-#灯条识别
-Light_red1:
-    top_H: 10
-    bottom_H: 0
-    top_S: 255
-    bottom_S: 200
-    top_V: 255
-    bottom_V: 100
-
-Light_red2:
-    top_H: 180
-    bottom_H: 160
-    top_S: 255
-    bottom_S: 200
-    top_V: 255
-    bottom_V: 100
-
-Light_blue:
-    top_H: 130
-    bottom_H: 90
-    top_S: 255
-    bottom_S: 120
-    top_V: 255
-    bottom_V: 80
-
-#灯条有些 偏橙偏黄 的话考虑以下：
-Light_orange1:
-    top_H: 35
-    bottom_H: 10
-    top_S: 255
-    bottom_S: 100
-    top_V: 255
-    bottom_V: 100
+  queue_size: 1
 
 
+  #灯条识别
+  Light_red1:
+      top_H: 10
+      bottom_H: 0
+      top_S: 255
+      bottom_S: 200
+      top_V: 255
+      bottom_V: 100
 
-#灯条筛选和配对
+  Light_red2:
+      top_H: 180
+      bottom_H: 160
+      top_S: 255
+      bottom_S: 200
+      top_V: 255
+      bottom_V: 100
 
-hull_area_Top: 1e-6
-solidity_top: 0.8
+  Light_blue:
+      top_H: 130
+      bottom_H: 90
+      top_S: 255
+      bottom_S: 120
+      top_V: 255
+      bottom_V: 80
 
-Light_area_top: 5000.0
-Light_area_Bottom: 100.0
+  #灯条有些 偏橙偏黄 的话考虑以下：
+  Light_orange1:
+      top_H: 35
+      bottom_H: 10
+      top_S: 255
+      bottom_S: 100
+      top_V: 255
+      bottom_V: 100
 
-width_min: 0.1
-height_min: 0.1
 
-rect_area_Bottom: 1e-6
-fill_ratio_Bottom: 0.6
 
-rate_Light_Top: 6
-rate_Light_Bottom: 1
+  #灯条筛选和配对
 
-rate_armor_Top: 6
-rate_armor_Bottom: 1.5
+  hull_area_Top: 1e-6
+  solidity_top: 0.8
 
-dis_angle_Top: 3
+  Light_area_top: 5000.0
+  Light_area_Bottom: 100.0
 
-#y轴偏离
-vertical_distance_Top: 20.0
+  width_min: 0.1
+  height_min: 0.1
 
-rate_light_small_Top: 3.5
+  rect_area_Bottom: 1e-6
+  fill_ratio_Bottom: 0.6
 
-Light_WIDTH_small: 0.135
-Light_WIDTH_large: 0.230
-Light_Height_small: 0.060
-Light_Height_large: 0.060
+  rate_Light_Top: 6
+  rate_Light_Bottom: 1
 
+  rate_armor_Top: 6
+  rate_armor_Bottom: 1.5
+
+  dis_angle_Top: 3
+
+  #y轴偏离
+  vertical_distance_Top: 20.0
+
+  rate_light_small_Top: 3.5
+
+  Light_WIDTH_small: 0.135
+  Light_WIDTH_large: 0.230
+  Light_Height_small: 0.060
+  Light_Height_large: 0.060
+
+
+ft_tracker_node:
+
+  Q: 0.03
+
+  R: 0.5
+
+  P: 1.0
+
+  queue_size: 1
+
+  T: 0.1
+
+  gate: 0.5
+
+  lost_timeout: 0.4
+
+  MAX_TRAIL: 800
